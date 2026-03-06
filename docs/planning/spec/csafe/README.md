@@ -9,6 +9,7 @@ Revision 0.25 (2023-03-23), 161 pages.
 **Revision:** 0.25 \
 **Date:** March 23, 2023 \
 **Pages:** 161
+**Source**:* [Concept2 PM5 CSAFE Communication Definition](https://www.concept2.com/support/software-development)
 
 ## Files
 
@@ -32,7 +33,7 @@ All files use standard YAML and can be loaded with any YAML parser:
 ```python
 import yaml
 
-with open("docs/spec/csafe/enums.yaml") as f:
+with open("docs/planning/spec/csafe/enums.yaml") as f:
     enums = yaml.safe_load(f)
 
 # Access a specific enum
@@ -43,23 +44,7 @@ for name, value in stroke_state["values"].items():
 
 ## Known Discrepancies
 
-These discrepancies were discovered during cross-checking against legacy
-implementations (c2bluetooth Dart, pROWess Python, ErgometerJS TypeScript):
-
-1. **DurationType enum** — The spec defines `CALORIES=0x40` and `DISTANCE=0x80`, but
-   the c2bluetooth Dart implementation has them swapped. The YAML follows the spec.
-
-2. **ErgMachineType enum** — The spec starts at value 0 (`STATIC_D`), but the Dart code
-   starts at 1. The YAML follows the spec.
-
-3. **Error code duplicates** — 74 error names appear twice in the spec with different
-   numeric values, representing the same logical error on different PM hardware
-   generations (PM3/PM4 range ~1-2600 vs PM5/nRF52 range ~10000-12000). Second
-   occurrences are suffixed with `__V2` in `errors.yaml`.
-
-## Extraction Method
-
-- PDF text extracted with `pdftotext -layout` (poppler-utils)
-- Parsed with custom Python scripts using regex patterns
-- Cross-checked against legacy library implementations
-- All files validated with `yaml.safe_load()`
+**Error code duplicates** — 74 error names appear twice in the spec with different
+numeric values, representing the same logical error on different PM hardware
+generations (PM3/PM4 range ~1-2600 vs PM5/nRF52 range ~10000-12000). Second
+occurrences are suffixed with `__V2` in `errors.yaml`.

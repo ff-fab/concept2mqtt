@@ -1,0 +1,446 @@
+# CSAFE Protocol Definition
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: CSAFE Protocol Definition (pp8-12)
+#
+# Cross-reference files:
+#   - docs/planning/spec/csafe/ble_services.yaml — BLE GATT transport layer
+#   - docs/planning/spec/csafe/enums.yaml — enumerated types used in commands/responses
+#
+# The CSAFE protocol is the wire-level framing and command/response format used
+# by all PM communication interfaces (USB, BLE, RS485).  Everything above this
+# layer (commands, data types) builds on these frame primitives.
+
+# ===========================================================================
+#  Frame definition (Figures 1-2, Tables 4-6)
+# ===========================================================================
+frame:
+
+  # -------------------------------------------------------------------------
+  #  Flag bytes (Table 5 — Unique Frame Flags)
+  # -------------------------------------------------------------------------
+  flags:
+    standard_start: 0xF1
+    extended_start: 0xF0
+    stop: 0xF2
+    byte_stuffing: 0xF3
+
+  # -------------------------------------------------------------------------
+  #  Standard frame (Figure 1)
+  #  No explicit addressing — primary communicating with a single secondary.
+  #  Structure: [start_flag] [frame_contents] [checksum] [stop_flag]
+  # -------------------------------------------------------------------------
+  standard:
+    description: >
+      Stream of bytes delineated by unique start (0xF1) and stop (0xF2) flags.
+      No explicit device addressing; appropriate for a primary communicating
+      with a single secondary.  Neither ACK nor NAK at the frame level is part
+      of the protocol.
+    fields:
+      - name: start_flag
+        value: 0xF1
+        bytes: 1
+      - name: frame_contents
+        bytes: variable
+        description: "Commands (request) or status + command responses (response)"
+      - name: checksum
+        bytes: 1
+      - name: stop_flag
+        value: 0xF2
+        bytes: 1
+
+  # -------------------------------------------------------------------------
+  #  Extended frame (Figure 2, Table 4)
+  #  Explicit device addressing — primary communicating with ≥2 secondaries.
+  #  Required when RaceOperationType ≠ RACEOPERATIONTYPE_DISABLE.
+  #  Structure: [ext_start] [dst_addr] [src_addr] [frame_contents] [checksum] [stop]
+  # -------------------------------------------------------------------------
+  extended:
+    description: >
+      Identical to the standard frame except for an extended start flag (0xF0)
+      and explicit source/destination address bytes.  Required for multi-PM
+      configurations (e.g., racing, multi-machine workouts) and whenever
+      RaceOperationType is not RACEOPERATIONTYPE_DISABLE.
+    fields:
+      - name: extended_start_flag
+        value: 0xF0
+        bytes: 1
+      - name: destination_address
+        bytes: 1
+      - name: source_address
+        bytes: 1
+      - name: frame_contents
+        bytes: variable
+      - name: checksum
+        bytes: 1
+      - name: stop_flag
+        value: 0xF2
+        bytes: 1
+
+    # Table 4 — Extended Frame Addressing
+    addressing:
+      pc_host:
+        address: 0x00
+        description: "PC host (primary device)"
+      unassigned:
+        range: [0x01, 0xFC]
+        description: "Unassigned addresses"
+      default_secondary:
+        address: 0xFD
+        description: "Default secondary address"
+      reserved:
+        address: 0xFE
+        description: "Reserved for expansion"
+      broadcast:
+        address: 0xFF
+        description: "Broadcast — accepted by all secondaries"
+
+  # -------------------------------------------------------------------------
+  #  Byte stuffing (Table 6 — Byte Stuffing Values)
+  #  Applied to frame contents, addresses (extended), and checksum.
+  #  Not applied to start/stop flags.
+  # -------------------------------------------------------------------------
+  byte_stuffing:
+    description: >
+      Ensures unique start/stop flag values never appear in frame contents.
+      Each flag-range byte is replaced by [0xF3, offset] where offset is the
+      low nibble (byte − 0xF0).  Applies to frame contents including extended
+      frame addresses and the checksum byte.  Worst-case doubles frame size.
+    rules:
+      - original: 0xF0
+        stuffed: [0xF3, 0x00]
+      - original: 0xF1
+        stuffed: [0xF3, 0x01]
+      - original: 0xF2
+        stuffed: [0xF3, 0x02]
+      - original: 0xF3
+        stuffed: [0xF3, 0x03]
+    # Cross-check: pROWess frameCSAFE() (main.py line 241-243)
+    #   if 0xF0 <= b and b <= 0xF3:
+    #       frame.append(0xF3)
+    #       frame.append(b - 0xF0)
+    # ✓ Matches spec Table 6 exactly.
+
+  # -------------------------------------------------------------------------
+  #  Checksum
+  # -------------------------------------------------------------------------
+  checksum:
+    algorithm: "XOR"
+    description: >
+      One-byte checksum computed by byte-by-byte XOR of the frame contents
+      (excluding start/stop flags).  In extended frames, addresses are also
+      excluded from the checksum computation.  The checksum byte itself is
+      subject to byte-stuffing.
+    scope: "Frame contents only (not start/stop flags, not extended-frame addresses)"
+    # Cross-check: pROWess frameCSAFE() (main.py lines 244-246)
+    #   csum = 0x00
+    #   for i in range(1, len(frame)):
+    #       csum = csum ^ frame[i]
+    # ✓ XOR of all bytes after start flag (standard frame has no addresses).
+
+  # -------------------------------------------------------------------------
+  #  Frame constraints
+  # -------------------------------------------------------------------------
+  constraints:
+    max_frame_size_bytes: 120
+    max_frame_size_includes: "start/stop flags, checksum, and byte-stuffed content"
+    min_interframe_gap_ms: 50
+    description: >
+      The protocol does not explicitly limit frame length, but PM memory
+      resources require buffering the entire frame before checksum validation.
+      A 120-byte maximum (including all overhead) is mandated.  Applications
+      must not send additional commands until either a response is received or
+      the minimum inter-frame gap (50 ms) has elapsed.
+    no_partial_commands: true
+    no_partial_commands_note: >
+      Individual commands/responses must not straddle a frame boundary.
+      Multiple complete commands may be packed into a single frame.
+
+  # -------------------------------------------------------------------------
+  #  Error recovery
+  # -------------------------------------------------------------------------
+  error_recovery:
+    description: >
+      If a start or stop byte is missed, the frame is discarded and
+      resynchronisation occurs at the beginning of the next frame.
+      No ACK/NAK mechanism exists at the frame level.
+
+# ===========================================================================
+#  Command format (Figures 3-4, Table 7)
+# ===========================================================================
+command_format:
+
+  description: >
+    Frame contents on the request side consist of one or more commands.
+    Commands come in two formats determined by the MS bit of the command byte.
+    Multiple complete commands may be packed into a single frame.
+
+  short_commands:
+    id_range: [0x80, 0xFF]
+    ms_bit: set
+    bytes: 1
+    description: >
+      Single command byte with no data.  The MS bit is set (1).
+
+  long_commands:
+    id_range: [0x00, 0x7F]
+    ms_bit: clear
+    description: >
+      Command byte followed by a byte count and variable-length data.
+      The MS bit is clear (0).  A long command with byte count 0 and no
+      data bytes is valid — secondary devices use the byte count to skip
+      unrecognised commands while continuing to process succeeding commands.
+    fields:
+      - name: command_id
+        bytes: 1
+        value_range: [0x00, 0x7F]
+      - name: data_byte_count
+        bytes: 1
+        value_range: [0, 255]
+      - name: data
+        bytes: variable
+        value_range: [0x00, 0xFF]
+
+# ===========================================================================
+#  Response format (Figures 5-6, Tables 8-9)
+# ===========================================================================
+response_format:
+
+  description: >
+    Response frame contents begin with a single status byte followed by zero
+    or more individual command response blocks.  When a frame with multiple
+    commands is sent, the response contains a corresponding response block
+    for each command in the same order.
+
+  fields:
+    - name: status_byte
+      bytes: 1
+      description: "Bit-mapped status (see status_byte section below)"
+    - name: command_responses
+      bytes: variable
+      description: "Zero or more individual command response blocks"
+
+  # Individual command response block (Figure 6)
+  individual_response:
+    description: >
+      Each command response echoes the command identifier, followed by a
+      byte count and data payload.
+    fields:
+      - name: command_id
+        bytes: 1
+        value_range: [0x00, 0xFF]
+        description: "Echo of the command that generated this response"
+      - name: data_byte_count
+        bytes: 1
+        value_range: [1, 255]
+      - name: data
+        bytes: variable
+        value_range: [0x00, 0xFF]
+
+  # Table 9 — Response Status Byte Bit-Mapping
+  status_byte:
+    description: >
+      Single-byte bit-mapped field encoding frame toggle, previous frame
+      status, and PM state machine state.
+    bits:
+      frame_toggle:
+        mask: 0x80
+        description: "Toggles between 0 and 1 on alternate frames"
+      previous_frame_status:
+        mask: 0x30
+        values:
+          ok: 0x00
+          reject: 0x10
+          bad: 0x20
+          not_ready: 0x30
+      state_machine_state:
+        mask: 0x0F
+        values:
+          error: 0x00
+          ready: 0x01
+          idle: 0x02
+          have_id: 0x03
+          # 0x04 — not defined in spec
+          in_use: 0x05
+          pause: 0x06
+          finish: 0x07
+          manual: 0x08
+          offline: 0x09
+
+# ===========================================================================
+#  PM manufacturer information (Table 10)
+# ===========================================================================
+manufacturer_info:
+  manufacturer_id: 22
+  class_identifier: 2
+  models:
+    PM3: 3
+    PM4: 4
+    PM5: 5
+  max_frame_length_bytes: 120
+  min_interframe_gap_ms: 50
+
+# ===========================================================================
+#  PM extensions — command wrappers (Tables 11-12)
+# ===========================================================================
+pm_extensions:
+
+  description: >
+    PM extends the public CSAFE command space using "wrapper" commands.
+    A single public wrapper provides limited proprietary access; four
+    proprietary wrappers partition the PM command space into set/get
+    operations for configuration and data.  Any wrapper may access any
+    proprietary command — the partitioning is a convention, not enforced.
+
+  # Table 11 — public/limited proprietary wrapper
+  public_wrapper:
+    CSAFE_SETUSERCFG1_CMD:
+      command_id: 0x1A
+      description: >
+        Single custom command wrapper used to expand the CSAFE command set
+        for additional PM-specific commands under the public protocol.
+
+  # Table 12 — proprietary wrappers (require authentication on USB/RS485)
+  proprietary_wrappers:
+    CSAFE_SETPMCFG_CMD:
+      command_id: 0x76
+      direction: set
+      domain: configuration
+    CSAFE_SETPMDATA_CMD:
+      command_id: 0x77
+      direction: set
+      domain: data
+    CSAFE_GETPMCFG_CMD:
+      command_id: 0x7E
+      direction: get
+      domain: configuration
+    CSAFE_GETPMDATA_CMD:
+      command_id: 0x7F
+      direction: get
+      domain: data
+
+# ===========================================================================
+#  PM state machine (Table 9 states + operational overview)
+# ===========================================================================
+pm_state_machine:
+  description: >
+    The PM operates a state machine whose current state is reported in the
+    low nibble (mask 0x0F) of every response status byte.  The public CSAFE
+    protocol uses a "state machine style mechanism" — commands are valid or
+    rejected depending on current state.
+  states:
+    - id: 0x00
+      name: error
+    - id: 0x01
+      name: ready
+    - id: 0x02
+      name: idle
+    - id: 0x03
+      name: have_id
+    # 0x04 is not defined in the spec
+    - id: 0x05
+      name: in_use
+    - id: 0x06
+      name: pause
+    - id: 0x07
+      name: finish
+    - id: 0x08
+      name: manual
+    - id: 0x09
+      name: offline
+
+# ===========================================================================
+#  Communication behaviour
+# ===========================================================================
+communication:
+  description: >
+    In general, the secondary device only speaks when responding to a
+    primary's request.  Certain exceptions may be made in very specific
+    circumstances.  Applications must not send additional commands until
+    either a response has been received or the minimum inter-frame gap
+    (50 ms) has elapsed.
+
+# ===========================================================================
+#  Link-layer interfaces (Table 3, Table 13, BLE attribute table)
+# ===========================================================================
+interfaces:
+
+  usb:
+    description: >
+      USB 1.10 full-speed HID device.  The report ID is always the first
+      byte in the USB packet, followed by the CSAFE frame.
+    supported_models: [PM3, PM4, PM5]
+    bus_specification: "USB 1.10"
+    bus_speed: "Full-speed (12 Mbit/s)"
+    device_class: "HID (Human Interface Device)"
+    control_endpoint_max_packet_bytes: 8
+    endpoints:
+      in:
+        type: interrupt
+        endpoint: EP3
+        polling_rate_ms: 8
+      out:
+        type: interrupt
+        endpoint: EP4
+        polling_rate_ms: 4
+    hid_reports:
+      - id: 1
+        payload_bytes: 20
+        note: "20 data bytes + 1-byte report ID"
+      - id: 2
+        payload_bytes: 120
+        note: "120 data bytes + 1-byte report ID"
+      - id: 4
+        payload_bytes: 62
+        note: "62 data bytes + 1-byte report ID"
+    manufacturer_string: "Concept2"
+    product_strings:
+      PM3: "Concept2 Performance Monitor 3 (PM3)"
+      PM4: "Concept2 Performance Monitor 4 (PM4)"
+      PM5: "Concept2 Performance Monitor 5 (PM5)"
+    access:
+      public_csafe: true
+      limited_proprietary: true
+      full_proprietary: "Requires authentication"
+
+  ble:
+    description: >
+      Bluetooth Smart (BLE).  CSAFE frames are sent/received via the C2 PM
+      Control Service characteristics.  The default ATT MTU limits each
+      write/read to 20 bytes; larger CSAFE frames must be split across
+      multiple writes.  PM5 firmware ≥V168.050 exposes a characteristic
+      (0x0017) reporting the negotiated ATT Rx MTU (23-512 bytes) and a
+      characteristic (0x0018) reporting LL DLE max Tx/Rx bytes (27-251 bytes).
+    supported_models: [PM5]
+    default_att_payload_bytes: 20
+    att_mtu_characteristic:
+      uuid_suffix: "0x0017"
+      range_bytes: [23, 512]
+      firmware_required: "PM5 V168.050+"
+    ll_dle_characteristic:
+      uuid_suffix: "0x0018"
+      range_bytes: [27, 251]
+      firmware_required: "PM5 V168.050+"
+    csafe_send_characteristic:
+      uuid_suffix: "0x0021"
+      max_bytes: 20
+      permission: WRITE
+      description: "CSAFE frame sent to PM"
+    csafe_receive_characteristic:
+      uuid_suffix: "0x0022"
+      max_bytes: 20
+      permission: READ
+      description: "CSAFE response frame from PM"
+    access:
+      public_csafe: true
+      full_proprietary: true
+      note: "BLE has full proprietary CSAFE access (no authentication required)"
+
+  rs485:
+    description: >
+      RS485 serial bus using RJ45/Ethernet cables.  Used for connecting
+      multiple PMs for racing or multi-machine workouts.
+    supported_models: [PM4, PM5]
+    access:
+      public_csafe: true
+      limited_proprietary: true
+      full_proprietary: "Requires authentication"

@@ -1,0 +1,1521 @@
+# Public CSAFE Commands
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: Command List — Public Short Commands & Public Long Commands (pp49-52)
+#
+# Cross-reference files:
+#   - docs/planning/spec/csafe/protocol.yaml — frame format, command structure
+#   - docs/planning/spec/csafe/enums.yaml — enumerated types used in responses
+#   - docs/planning/spec/csafe/ble_services.yaml — BLE GATT transport layer
+#
+# Command ID conventions (per protocol.yaml command_format):
+#   Short commands: 0x80-0xFF (MS bit set) — single command byte, no data
+#   Long commands:  0x00-0x7F (MS bit clear) — command byte + byte count + data
+
+# ===========================================================================
+#  PM Public CSAFE Protocol Defaults (Table 16, p46)
+# ===========================================================================
+defaults:
+  haveid_state_timeout:
+    value_seconds: 10
+    settable: true
+    set_command: "CSAFE_SETTIMEOUT_CMD"
+    description: >
+      Delay between entering the HaveID state and transitioning back to the
+      Idle state.
+  inuse_inactivity_timeout:
+    value_seconds: 6
+    settable: false
+    description: >
+      Duration of inactivity during the InUse state (once workout has begun)
+      before entering the Paused state.
+  pause_inactivity_timeout:
+    value_seconds: 220
+    settable: false
+    description: >
+      Duration of inactivity during the Paused state before entering the
+      Finished state.
+  unconfigured_manual_timeout:
+    value_seconds: 220
+    settable: false
+    description: >
+      Same as Pause state timeout; occurs if a user enters MANUAL mode and
+      doesn't configure a workout.
+  finished_state_timeout:
+    value_seconds: 220
+    settable: false
+    description: >
+      Occurs if the workout has begun and been abandoned or was never begun.
+  units_type:
+    value: "metric"
+    settable: false
+    description: "Metric units only."
+  user_id_digits:
+    value: 5
+    settable: true
+    set_command: "CSAFE_IDDIGITS_CMD"
+    range: [2, 5]
+    description: "Five-digit user ID (settable via cmdIDDigits from 2-5 digits)."
+  user_id:
+    value: "00000"
+    settable: true
+    description: "Default user ID value."
+  autoupload_byte:
+    value: 0x10
+    settable: false
+    description: >
+      flgAutoStatus: Disabled (cannot be changed).
+      flgUpStatus: Disabled (cannot be changed).
+      flgUpList: Disabled (cannot be changed).
+      flgAck: Enabled (cannot be changed).
+      flgExternControl: Disabled (cannot be changed).
+  serial_number_digits:
+    value: 9
+    settable: false
+    description: "Number of digits in serial number response."
+  pm_specific_commands:
+    value: "all_states"
+    description: "PM-specific commands are accessible in all slave states."
+
+# ===========================================================================
+#  Unsupported Features (Table 17, p47)
+# ===========================================================================
+unsupported:
+  autostatus_enable:
+    description: "No unsolicited status uploads."
+  uplist_enable:
+    description: "No unsolicited command list uploads."
+  ack_disable:
+    description: "All commands will be responded to by at least a status byte."
+  text_messaging:
+    description: "No text messaging functions."
+  set_user_information:
+    description: "Not setting user weight, age and gender."
+  get_user_information:
+    description: "User weight is fixed at 175 lbs, age and gender not supported."
+  finished_state_timeout:
+    description: >
+      No Finished state timeout causes a transition back to Idle; when a user
+      hits MENU/BACK to conclude viewing a finished workout result or terminate
+      a workout in progress, the Ready state is entered instead of the Idle
+      state.  A Finished state timeout returns to the Ready state.
+  paused_state_timeout:
+    description: >
+      A timeout is employed to enter the Finished state in the event a
+      configured workout is never started or re-started.
+  manual_state_timeout:
+    description: >
+      A timeout is employed to return to the Idle state in the event a manual
+      user ID override is performed and a workout is never configured.
+  inuse_state_entry:
+    description: >
+      In addition to allowing entry into the InUse state from the Idle and
+      HaveID states, entry from the Ready state is also allowed.
+  set_calories_goal:
+    description: >
+      Since the PM allows the user to select display units (time/meters, watts,
+      or calories), setting the workout goal using power is sufficient to define
+      a target pace for the pace boat display for all display units.
+
+# ===========================================================================
+#  Programmed Workout Parameter Limits (Tables 18-19, p48)
+# ===========================================================================
+workout_limits:
+  pm3_pm4:
+    source: "Table 18"
+    settwork:
+      command: "CSAFE_SETTWORK_CMD"
+      description: "Workout time goal"
+      minimum: "0:00:20"
+      maximum: "9:59:59"
+    sethorizontal:
+      command: "CSAFE_SETHORIZONTAL_CMD"
+      description: "Horizontal distance goal"
+      minimum_meters: 100
+      maximum_meters: 50000
+    set_splitduration:
+      command: "CSAFE_PM_SET_SPLITDURATION"
+      description: "Time/distance split duration"
+      minimum: "0:00:20 or 100m"
+      maximum: "Cannot exceed workout time/distance goal"
+      max_splits: 30
+      notes:
+        - "Minimum split duration must not cause total splits to exceed 30."
+        - "Maximum split duration cannot exceed the workout time or distance goal."
+  pm5:
+    source: "Table 19"
+    settwork:
+      command: "CSAFE_SETTWORK_CMD"
+      description: "Workout time goal"
+      minimum: "0:00:20"
+      maximum: "9:59:59"
+    sethorizontal:
+      command: "CSAFE_SETHORIZONTAL_CMD"
+      description: "Horizontal distance goal"
+      minimum_meters: 100
+      maximum_meters: 50000
+      maximum_meters_bikeerg: 100000
+    set_splitduration:
+      command: "CSAFE_PM_SET_SPLITDURATION"
+      description: "Time/distance split duration"
+      minimum: "0:00:20 or 100m"
+      maximum: "Cannot exceed workout time/distance goal"
+      max_splits: 50
+      notes:
+        - "Minimum split duration must not cause total splits to exceed 50."
+        - "Maximum split duration cannot exceed the workout time or distance goal."
+
+# ===========================================================================
+#  Commands
+# ===========================================================================
+commands:
+
+  # =========================================================================
+  #  Short Commands (0x80-0xFF — MS bit set, no data bytes)
+  # =========================================================================
+  short:
+
+    # -----------------------------------------------------------------------
+    #  State-transition commands (status category)
+    # -----------------------------------------------------------------------
+    CSAFE_GETSTATUS_CMD:
+      id: 0x80
+      description: "Get current machine status"
+      category: "status"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 1
+        fields:
+          - name: "status"
+            type: "uint8"
+            description: "Machine status byte (see pm_state_machine in protocol.yaml)"
+      notes: "Status byte is also the first byte of every response frame."
+      cross_ref:
+        pROWess: "Implicit in all responses — unframeCSAFE() extracts rsp[1] as status"
+
+    CSAFE_RESET_CMD:
+      id: 0x81
+      description: "Reset machine to default state"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref: {}
+
+    CSAFE_GOIDLE_CMD:
+      id: 0x82
+      description: "Transition to Idle state"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref:
+        pROWess: >
+          main.py runRower() — sent at end of workout to go idle:
+          frameCSAFE([0x82])
+
+    CSAFE_GOHAVEID_CMD:
+      id: 0x83
+      description: "Transition to HaveID state"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref: {}
+
+    CSAFE_GOINUSE_CMD:
+      id: 0x85
+      description: "Transition to InUse state (start workout)"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref:
+        pROWess: >
+          main.py programPhase() — sent as last command in workout setup
+          sequence: frameCSAFE([0x87, ..., 0x85])
+
+    CSAFE_GOFINISHED_CMD:
+      id: 0x86
+      description: "Transition to Finished state"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref: {}
+
+    CSAFE_GOREADY_CMD:
+      id: 0x87
+      description: "Transition to Ready state"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref:
+        pROWess: >
+          main.py programPhase() — sent as first command in workout setup:
+          frameCSAFE([0x87, 0x20, ...]).
+          Also sent standalone in runRower(): frameCSAFE([0x87])
+
+    CSAFE_BADID_CMD:
+      id: 0x88
+      description: "Signal bad ID received"
+      category: "state_transition"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+        notes: "No specific response data, but the status byte will be returned."
+      cross_ref: {}
+
+    # -----------------------------------------------------------------------
+    #  Identification / device-info commands
+    # -----------------------------------------------------------------------
+    CSAFE_GETVERSION_CMD:
+      id: 0x91
+      description: "Get firmware/hardware version information"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 7
+        fields:
+          - name: "manufacturer_id"
+            byte: 0
+            type: "uint8"
+            description: "Manufacturer ID"
+          - name: "cid"
+            byte: 1
+            type: "uint8"
+            description: "CSAFE Implementation ID"
+          - name: "model"
+            byte: 2
+            type: "uint8"
+            description: "Model number"
+          - name: "hw_version_ls"
+            byte: 3
+            type: "uint8"
+            description: "Hardware version (least significant)"
+          - name: "hw_version_ms"
+            byte: 4
+            type: "uint8"
+            description: "Hardware version (most significant)"
+          - name: "sw_version_ls"
+            byte: 5
+            type: "uint8"
+            description: "Software version (least significant)"
+          - name: "sw_version_ms"
+            byte: 6
+            type: "uint8"
+            description: "Software version (most significant)"
+      cross_ref: {}
+
+    CSAFE_GETID_CMD:
+      id: 0x92
+      description: "Get user ID"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 5
+        notes: "Number of response bytes depends on # ID digits configuration (default 5)."
+        fields:
+          - name: "digit_0_ms"
+            byte: 0
+            type: "ascii"
+            description: "ASCII Digit 0 (most significant)"
+          - name: "digit_1"
+            byte: 1
+            type: "ascii"
+            description: "ASCII Digit 1"
+          - name: "digit_2"
+            byte: 2
+            type: "ascii"
+            description: "ASCII Digit 2"
+          - name: "digit_3"
+            byte: 3
+            type: "ascii"
+            description: "ASCII Digit 3"
+          - name: "digit_4_ls"
+            byte: 4
+            type: "ascii"
+            description: "ASCII Digit 4 (least significant)"
+      cross_ref: {}
+
+    CSAFE_GETUNITS_CMD:
+      id: 0x93
+      description: "Get units type"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 1
+        fields:
+          - name: "units_type"
+            byte: 0
+            type: "uint8"
+            description: "Units type (metric only on PM)"
+      cross_ref: {}
+
+    CSAFE_GETSERIAL_CMD:
+      id: 0x94
+      description: "Get PM serial number"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 9
+        fields:
+          - name: "serial_digits"
+            bytes: [0, 8]
+            type: "ascii"
+            count: 9
+            description: "ASCII serial number digits (MS to LS)"
+      cross_ref:
+        pROWess: >
+          main.py decodeCSAFE() — checks rsp[1][0] == 0x94, decodes
+          serial as chr() of response bytes.
+
+    # -----------------------------------------------------------------------
+    #  Not-implemented short commands (0x98-0x9F)
+    # -----------------------------------------------------------------------
+    CSAFE_GETLIST_CMD:
+      id: 0x98
+      description: "Get command list"
+      category: "identification"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUTILIZATION_CMD:
+      id: 0x99
+      description: "Get utilization information"
+      category: "identification"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETMOTORCURRENT_CMD:
+      id: 0x9A
+      description: "Get motor current"
+      category: "identification"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Odometer and error commands
+    # -----------------------------------------------------------------------
+    CSAFE_GETODOMETER_CMD:
+      id: 0x9B
+      description: "Get lifetime odometer distance"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 5
+        fields:
+          - name: "distance_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Distance (LSB)"
+          - name: "distance_1"
+            byte: 1
+            type: "uint8"
+            description: "Distance byte 1"
+          - name: "distance_2"
+            byte: 2
+            type: "uint8"
+            description: "Distance byte 2"
+          - name: "distance_msb"
+            byte: 3
+            type: "uint8"
+            description: "Distance (MSB)"
+          - name: "units_specifier"
+            byte: 4
+            type: "uint8"
+            description: "Units specifier"
+      cross_ref: {}
+
+    CSAFE_GETERRORCODE_CMD:
+      id: 0x9C
+      description: "Get error code"
+      category: "status"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "error_code_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Error code (LSB)"
+          - name: "error_code_1"
+            byte: 1
+            type: "uint8"
+            description: "Error code byte 1"
+          - name: "error_code_msb"
+            byte: 2
+            type: "uint8"
+            description: "Error code (MSB)"
+      cross_ref: {}
+
+    CSAFE_GETSERVICECODE_CMD:
+      id: 0x9D
+      description: "Get service code"
+      category: "status"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUSERCFG1_CMD:
+      id: 0x9E
+      description: "Get user configuration 1"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUSERCFG2_CMD:
+      id: 0x9F
+      description: "Get user configuration 2"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Workout data retrieval commands
+    # -----------------------------------------------------------------------
+    CSAFE_GETTWORK_CMD:
+      id: 0xA0
+      description: "Get elapsed workout time"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "hours"
+            byte: 0
+            type: "uint8"
+            description: "Hours"
+          - name: "minutes"
+            byte: 1
+            type: "uint8"
+            description: "Minutes"
+          - name: "seconds"
+            byte: 2
+            type: "uint8"
+            description: "Seconds"
+      cross_ref: {}
+
+    CSAFE_GETHORIZONTAL_CMD:
+      id: 0xA1
+      description: "Get horizontal distance"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "distance_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Horizontal distance (LSB)"
+          - name: "distance_msb"
+            byte: 1
+            type: "uint8"
+            description: "Horizontal distance (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      cross_ref: {}
+
+    CSAFE_GETVERTICAL_CMD:
+      id: 0xA2
+      description: "Get vertical distance"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETCALORIES_CMD:
+      id: 0xA3
+      description: "Get total calories burned"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 2
+        fields:
+          - name: "calories_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Total calories (LSB)"
+          - name: "calories_msb"
+            byte: 1
+            type: "uint8"
+            description: "Total calories (MSB)"
+      cross_ref: {}
+
+    CSAFE_GETPROGRAM_CMD:
+      id: 0xA4
+      description: "Get current programmed/pre-stored workout number"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 1
+        fields:
+          - name: "program_number"
+            byte: 0
+            type: "uint8"
+            description: "Programmed/pre-stored workout number"
+      cross_ref: {}
+
+    CSAFE_GETSPEED_CMD:
+      id: 0xA5
+      description: "Get speed"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETPACE_CMD:
+      id: 0xA6
+      description: "Get current stroke pace"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "pace_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Stroke pace (LSB)"
+          - name: "pace_msb"
+            byte: 1
+            type: "uint8"
+            description: "Stroke pace (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      cross_ref: {}
+
+    CSAFE_GETCADENCE_CMD:
+      id: 0xA7
+      description: "Get current stroke rate (cadence)"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "stroke_rate_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Stroke rate (LSB)"
+          - name: "stroke_rate_msb"
+            byte: 1
+            type: "uint8"
+            description: "Stroke rate (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      cross_ref: {}
+
+    CSAFE_GETGRADE_CMD:
+      id: 0xA8
+      description: "Get grade"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETGEAR_CMD:
+      id: 0xA9
+      description: "Get gear"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUPLIST_CMD:
+      id: 0xAA
+      description: "Get upload list"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUSERINFO_CMD:
+      id: 0xAB
+      description: "Get user information (weight fixed at 175 lbs; age/gender not supported)"
+      category: "identification"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 5
+        fields:
+          - name: "weight_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Weight (LSB)"
+          - name: "weight_msb"
+            byte: 1
+            type: "uint8"
+            description: "Weight (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+          - name: "age"
+            byte: 3
+            type: "uint8"
+            description: "Age (not supported — returns 0)"
+          - name: "gender"
+            byte: 4
+            type: "uint8"
+            description: "Gender (not supported — returns 0)"
+      notes: "See unsupported features: weight fixed at 175 lbs, age and gender not supported."
+      cross_ref: {}
+
+    CSAFE_GETTORQUE_CMD:
+      id: 0xAC
+      description: "Get torque"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Heart rate commands
+    # -----------------------------------------------------------------------
+    CSAFE_GETHRCUR_CMD:
+      id: 0xB0
+      description: "Get current heart rate"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 1
+        fields:
+          - name: "heart_rate"
+            byte: 0
+            type: "uint8"
+            description: "Heart rate in beats per minute"
+      cross_ref: {}
+
+    CSAFE_GETHRTZONE_CMD:
+      id: 0xB2
+      description: "Get heart rate zone"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETMETS_CMD:
+      id: 0xB3
+      description: "Get METs (metabolic equivalent)"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETPOWER_CMD:
+      id: 0xB4
+      description: "Get current stroke power in watts"
+      category: "workout_data"
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 3
+        fields:
+          - name: "watts_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Stroke watts (LSB)"
+          - name: "watts_msb"
+            byte: 1
+            type: "uint8"
+            description: "Stroke watts (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      cross_ref: {}
+
+    CSAFE_GETHRAVG_CMD:
+      id: 0xB5
+      description: "Get average heart rate"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETHRMAX_CMD:
+      id: 0xB6
+      description: "Get maximum heart rate"
+      category: "workout_data"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Not-implemented short commands (0xBE-0xE5)
+    # -----------------------------------------------------------------------
+    CSAFE_GETUSERDATA1_CMD:
+      id: 0xBE
+      description: "Get user data 1"
+      category: "identification"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETUSERDATA2_CMD:
+      id: 0xBF
+      description: "Get user data 2"
+      category: "identification"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETAUDIOCHANNEL_CMD:
+      id: 0xC0
+      description: "Get audio channel"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETAUDIOVOLUME_CMD:
+      id: 0xC1
+      description: "Get audio volume"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETAUDIOMUTE_CMD:
+      id: 0xC2
+      description: "Get audio mute status"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_ENDTEXT_CMD:
+      id: 0xE0
+      description: "End text message"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_DISPLAYPOPUP_CMD:
+      id: 0xE1
+      description: "Display popup message"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETPOPUPSTATUS_CMD:
+      id: 0xE5
+      description: "Get popup display status"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+  # =========================================================================
+  #  Long Commands (0x00-0x7F — MS bit clear, have data bytes)
+  # =========================================================================
+  long:
+
+    # -----------------------------------------------------------------------
+    #  Upload / auto-configuration commands
+    # -----------------------------------------------------------------------
+    CSAFE_AUTOUPLOAD_CMD:
+      id: 0x01
+      description: "Configure auto-upload behaviour"
+      category: "configuration"
+      request:
+        data_bytes: 1
+        fields:
+          - name: "configuration"
+            byte: 0
+            type: "uint8"
+            description: >
+              Configuration byte (see defaults.autoupload_byte for bit meanings).
+              Most bits cannot be changed on PM.
+      response:
+        data_bytes: 0
+      notes: "Most auto-upload features are unsupported on PM (see unsupported section)."
+      cross_ref: {}
+
+    CSAFE_UPLIST_CMD:
+      id: 0x02
+      description: "Upload command list"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_UPSTATUSSEC_CMD:
+      id: 0x04
+      description: "Upload status to secondary"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_UPLISTSEC_CMD:
+      id: 0x05
+      description: "Upload list to secondary"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Device configuration commands
+    # -----------------------------------------------------------------------
+    CSAFE_IDDIGITS_CMD:
+      id: 0x10
+      description: "Set number of ID digits (2-5)"
+      category: "configuration"
+      request:
+        data_bytes: 1
+        fields:
+          - name: "digit_count"
+            byte: 0
+            type: "uint8"
+            description: "Number of digits for user ID (range 2-5)"
+            range: [2, 5]
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    CSAFE_SETTIME_CMD:
+      id: 0x11
+      description: "Set time of day"
+      category: "configuration"
+      request:
+        data_bytes: 3
+        fields:
+          - name: "hour"
+            byte: 0
+            type: "uint8"
+            description: "Hour (0-23)"
+          - name: "minute"
+            byte: 1
+            type: "uint8"
+            description: "Minute (0-59)"
+          - name: "second"
+            byte: 2
+            type: "uint8"
+            description: "Second (0-59)"
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    CSAFE_SETDATE_CMD:
+      id: 0x12
+      description: "Set date"
+      category: "configuration"
+      request:
+        data_bytes: 3
+        fields:
+          - name: "year"
+            byte: 0
+            type: "uint8"
+            description: "Year (offset from 1900)"
+          - name: "month"
+            byte: 1
+            type: "uint8"
+            description: "Month (1-12)"
+          - name: "day"
+            byte: 2
+            type: "uint8"
+            description: "Day (1-31)"
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    CSAFE_SETTIMEOUT_CMD:
+      id: 0x13
+      description: "Set HaveID state transition timeout"
+      category: "configuration"
+      request:
+        data_bytes: 1
+        fields:
+          - name: "timeout"
+            byte: 0
+            type: "uint8"
+            description: "State timeout in seconds (default 10)"
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    # -----------------------------------------------------------------------
+    #  PM-specific wrapper command
+    # -----------------------------------------------------------------------
+    CSAFE_SETUSERCFG1_CMD:
+      id: 0x1A
+      description: "Wrapper for one or more PM-specific commands"
+      category: "pm_wrapper"
+      request:
+        data_bytes: variable
+        fields:
+          - name: "pm_commands"
+            type: "bytes"
+            description: >
+              One or more PM-specific CSAFE commands (see commands_proprietary.yaml).
+              The byte count covers all enclosed PM-specific command bytes.
+      response:
+        data_bytes: variable
+        fields:
+          - name: "pm_responses"
+            type: "bytes"
+            description: "PM-specific command identifier(s) and response data"
+      notes: >
+        This is equivalent to CSAFE_GETUSERCAPS1_CMD / CSAFE_GETUSERCAPS2_CMD from
+        the public CSAFE protocol. Added for PM-specific functionality as a command
+        wrapper.
+      cross_ref:
+        pROWess: >
+          main.py programPhase() — wraps PM_SET_SPLITDURATION:
+          0x1A, 0x07, 0x05, 0x05, 0x00, tsplit[0], tsplit[1], tsplit[2], tsplit[3]
+          (0x1A = SETUSERCFG1, 0x07 = 7 data bytes, 0x05 = PM_SET_SPLITDURATION cmd,
+          0x05 = 5 bytes of split data, 0x00 = time split type, then 4-byte LE duration)
+
+    CSAFE_SETUSERCFG2_CMD:
+      id: 0x1B
+      description: "Set user configuration 2"
+      category: "configuration"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Workout setup commands
+    # -----------------------------------------------------------------------
+    CSAFE_SETTWORK_CMD:
+      id: 0x20
+      description: "Set workout time goal"
+      category: "workout_setup"
+      request:
+        data_bytes: 3
+        fields:
+          - name: "hours"
+            byte: 0
+            type: "uint8"
+            description: "Hours"
+          - name: "minutes"
+            byte: 1
+            type: "uint8"
+            description: "Minutes"
+          - name: "seconds"
+            byte: 2
+            type: "uint8"
+            description: "Seconds"
+      response:
+        data_bytes: 0
+      notes: "Minimum 0:00:20, maximum 9:59:59 (see workout_limits)."
+      cross_ref:
+        pROWess: >
+          main.py programPhase() — 0x20, 0x03, 0x00, minutes, seconds
+          (0x20 = SETTWORK, 0x03 = 3 data bytes, hours=0x00, then minutes/seconds)
+
+    CSAFE_SETHORIZONTAL_CMD:
+      id: 0x21
+      description: "Set horizontal distance goal"
+      category: "workout_setup"
+      request:
+        data_bytes: 3
+        fields:
+          - name: "distance_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Horizontal distance (LSB)"
+          - name: "distance_msb"
+            byte: 1
+            type: "uint8"
+            description: "Horizontal distance (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      response:
+        data_bytes: 0
+      notes: "Minimum 100m, maximum 50,000m (100,000m for BikeErg). See workout_limits."
+      cross_ref: {}
+
+    CSAFE_SETVERTICAL_CMD:
+      id: 0x22
+      description: "Set vertical distance"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETCALORIES_CMD:
+      id: 0x23
+      description: "Set calorie goal"
+      category: "workout_setup"
+      request:
+        data_bytes: 2
+        fields:
+          - name: "calories_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Total calories (LSB)"
+          - name: "calories_msb"
+            byte: 1
+            type: "uint8"
+            description: "Total calories (MSB)"
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    CSAFE_SETPROGRAM_CMD:
+      id: 0x24
+      description: "Program the previously configured workout"
+      category: "workout_setup"
+      request:
+        data_bytes: 2
+        fields:
+          - name: "program_number"
+            byte: 0
+            type: "uint8"
+            description: "Programmed or pre-stored workout number (0 = programmed)"
+          - name: "unused"
+            byte: 1
+            type: "uint8"
+            description: "Don't care (ignored by PM)"
+      response:
+        data_bytes: 0
+      notes: >
+        When issued, all pertinent workout parameters are checked against limits.
+        If any parameter violates limits, the entire workout configuration is aborted
+        resulting in a PrevReject frame status. Use PM-specific GetErrorType to
+        determine the specific error.
+      cross_ref:
+        pROWess: >
+          main.py programPhase() — 0x24, 0x02, 0x00, 0x00
+          (0x24 = SETPROGRAM, 0x02 = 2 data bytes, program=0x00, unused=0x00)
+
+    CSAFE_SETSPEED_CMD:
+      id: 0x25
+      description: "Set speed"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETGRADE_CMD:
+      id: 0x28
+      description: "Set grade"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETGEAR_CMD:
+      id: 0x29
+      description: "Set gear"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETUSERINFO_CMD:
+      id: 0x2B
+      description: "Set user information"
+      category: "configuration"
+      implemented: false
+      notes: "Not supported — see unsupported features."
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETTORQUE_CMD:
+      id: 0x2C
+      description: "Set torque"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETLEVEL_CMD:
+      id: 0x2D
+      description: "Set level"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETTARGETHR_CMD:
+      id: 0x30
+      description: "Set target heart rate"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETMETS_CMD:
+      id: 0x33
+      description: "Set METs goal"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETPOWER_CMD:
+      id: 0x34
+      description: "Set power goal in watts"
+      category: "workout_setup"
+      request:
+        data_bytes: 3
+        fields:
+          - name: "watts_lsb"
+            byte: 0
+            type: "uint8"
+            description: "Stroke watts (LSB)"
+          - name: "watts_msb"
+            byte: 1
+            type: "uint8"
+            description: "Stroke watts (MSB)"
+          - name: "units_specifier"
+            byte: 2
+            type: "uint8"
+            description: "Units specifier"
+      response:
+        data_bytes: 0
+      cross_ref: {}
+
+    CSAFE_SETHRZONE_CMD:
+      id: 0x35
+      description: "Set heart rate zone"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETHRMAX_CMD:
+      id: 0x36
+      description: "Set maximum heart rate"
+      category: "workout_setup"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Not-implemented audio/text commands
+    # -----------------------------------------------------------------------
+    CSAFE_SETCHANNELRANGE_CMD:
+      id: 0x40
+      description: "Set channel range"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETVOLUMERANGE_CMD:
+      id: 0x41
+      description: "Set volume range"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETAUDIOMUTE_CMD:
+      id: 0x42
+      description: "Set audio mute"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETAUDIOCHANNEL_CMD:
+      id: 0x43
+      description: "Set audio channel"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_SETAUDIOVOLUME_CMD:
+      id: 0x44
+      description: "Set audio volume"
+      category: "audio"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_STARTTEXT_CMD:
+      id: 0x60
+      description: "Start text message"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_APPENDTEXT_CMD:
+      id: 0x61
+      description: "Append text message"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    CSAFE_GETTEXTSTATUS_CMD:
+      id: 0x65
+      description: "Get text message status"
+      category: "text"
+      implemented: false
+      request:
+        data_bytes: 0
+      response:
+        data_bytes: 0
+
+    # -----------------------------------------------------------------------
+    #  Capabilities command
+    # -----------------------------------------------------------------------
+    CSAFE_GETCAPS_CMD:
+      id: 0x70
+      description: "Get device capabilities"
+      category: "identification"
+      request:
+        data_bytes: 1
+        fields:
+          - name: "capability_code"
+            byte: 0
+            type: "uint8"
+            description: "Capability code to query (0x00, 0x01, or 0x02)"
+      response:
+        data_bytes: variable
+        capability_codes:
+          0x00:
+            description: "Frame capabilities"
+            fields:
+              - name: "max_rx_frame"
+                byte: 0
+                type: "uint8"
+                description: "Maximum receive frame size"
+              - name: "max_tx_frame"
+                byte: 1
+                type: "uint8"
+                description: "Maximum transmit frame size"
+              - name: "min_interframe"
+                byte: 2
+                type: "uint8"
+                description: "Minimum interframe gap"
+          0x01:
+            description: "Capability set 1"
+            fields:
+              - name: "byte_0"
+                byte: 0
+                type: "uint8"
+                value: 0x00
+              - name: "byte_1"
+                byte: 1
+                type: "uint8"
+                value: 0x00
+          0x02:
+            description: "Capability set 2"
+            fields:
+              - name: "bytes"
+                bytes: [0, 10]
+                type: "uint8"
+                count: 11
+                value: 0x00
+                description: "All bytes return 0x00"
+      cross_ref: {}
+
+    # -----------------------------------------------------------------------
+    #  PM-specific wrapper commands (long format)
+    # -----------------------------------------------------------------------
+    CSAFE_SETPMCFG_CMD:
+      id: 0x76
+      description: "Wrapper for C2 proprietary set-configuration commands"
+      category: "pm_wrapper"
+      request:
+        data_bytes: variable
+        fields:
+          - name: "pm_commands"
+            type: "bytes"
+            description: "One or more C2 proprietary CSAFE commands"
+      response:
+        data_bytes: variable
+        fields:
+          - name: "pm_responses"
+            type: "bytes"
+            description: "C2 proprietary command responses"
+      notes: >
+        Equivalent to CSAFE_GETUSERCAPS1_CMD / CSAFE_GETUSERCAPS2_CMD from the
+        public CSAFE protocol. Added for PM-specific functionality.
+      cross_ref: {}
+
+    CSAFE_SETPMDATA_CMD:
+      id: 0x77
+      description: "Wrapper for C2 proprietary set-data commands"
+      category: "pm_wrapper"
+      request:
+        data_bytes: variable
+        fields:
+          - name: "pm_commands"
+            type: "bytes"
+            description: "One or more C2 proprietary CSAFE commands"
+      response:
+        data_bytes: variable
+        fields:
+          - name: "pm_responses"
+            type: "bytes"
+            description: "C2 proprietary command responses"
+      cross_ref: {}
+
+    CSAFE_GETPMCFG_CMD:
+      id: 0x7E
+      description: "Wrapper for C2 proprietary get-configuration commands"
+      category: "pm_wrapper"
+      request:
+        data_bytes: variable
+        fields:
+          - name: "pm_commands"
+            type: "bytes"
+            description: "One or more C2 proprietary CSAFE commands"
+      response:
+        data_bytes: variable
+        fields:
+          - name: "pm_responses"
+            type: "bytes"
+            description: "C2 proprietary command responses"
+      cross_ref: {}
+
+    CSAFE_GETPMDATA_CMD:
+      id: 0x7F
+      description: "Wrapper for C2 proprietary get-data commands"
+      category: "pm_wrapper"
+      request:
+        data_bytes: variable
+        fields:
+          - name: "pm_commands"
+            type: "bytes"
+            description: "One or more C2 proprietary CSAFE commands"
+      response:
+        data_bytes: variable
+        fields:
+          - name: "pm_responses"
+            type: "bytes"
+            description: "C2 proprietary command responses"
+      cross_ref: {}

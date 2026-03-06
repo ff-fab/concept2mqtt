@@ -1,0 +1,672 @@
+# PM5 CSAFE Enumerated Types
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: Appendix A — Enumerated Type Definitions (pp93-103)
+#
+# Each enum maps symbolic names to their integer wire-protocol values.
+# Values are decimal unless noted. Hex equivalents in comments where useful.
+#
+# Cross-reference: docs/legacy/examples/c2bluetooth/lib/enums.dart
+# Discrepancies between the spec and the Dart implementation are flagged
+# with "DISCREPANCY" comments.
+
+enums:
+
+  # ---------------------------------------------------------------------------
+  # Operational State (p93)
+  # ---------------------------------------------------------------------------
+  OperationalState:
+    description: "PM operational states"
+    spec_name: "OBJ_OPERATIONALSTATE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      RESET: 0
+      READY: 1
+      WORKOUT: 2
+      WARMUP: 3
+      RACE: 4
+      POWEROFF: 5
+      PAUSE: 6
+      INVOKEBOOTLOADER: 7
+      POWEROFF_SHIP: 8
+      IDLE_CHARGE: 9
+      IDLE: 10
+      MFGTEST: 11
+      FWUPDATE: 12
+      DRAGFACTOR: 13
+      DFCALIBRATION: 100  # 0x64 — drag factor calibration
+
+  # ---------------------------------------------------------------------------
+  # Erg Model Type (p93)
+  # ---------------------------------------------------------------------------
+  ErgModelType:
+    description: "Ergometer model types (D/E, C/B, A)"
+    spec_name: "OBJ_ERGMODELTYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      TYPE_D: 0   # Model D/E
+      TYPE_C: 1   # Model C/B
+      TYPE_A: 2   # Model A
+
+  # ---------------------------------------------------------------------------
+  # Erg Machine Type (pp93-94)
+  # ---------------------------------------------------------------------------
+  ErgMachineType:
+    description: "Ergometer machine types"
+    spec_name: "OBJ_ERGMACHINETYPE_T"
+    # DISCREPANCY: The spec starts at 0 (STATIC_D=0, STATIC_C=1, STATIC_A=2,
+    # STATIC_B=3) but the Dart code starts at 1 (STATIC_D=1, STATIC_C=2,
+    # STATIC_A=3, STATIC_B=4). Values from STATIC_E (5) onward agree.
+    # Also: spec uses LINKED_DYNAMIC, Dart uses SLIDES_DYNAMIC (both = 32).
+    # Also: spec comment for STATIC_DYNO says "(32)" but the explicit
+    # assignment is = 64 — the comment is a typo in the spec.
+    values:
+      STATIC_D: 0              # Model D, static
+      STATIC_C: 1              # Model C, static
+      STATIC_A: 2              # Model A, static
+      STATIC_B: 3              # Model B, static
+      STATIC_E: 5              # Model E, static
+      STATIC_SIMULATOR: 7      # Rower simulator
+      STATIC_DYNAMIC: 8        # Dynamic, static
+      SLIDES_A: 16             # 0x10 — Model A, slides
+      SLIDES_B: 17             # 0x11 — Model B, slides
+      SLIDES_C: 18             # 0x12 — Model C, slides
+      SLIDES_D: 19             # 0x13 — Model D, slides
+      SLIDES_E: 20             # 0x14 — Model E, slides
+      LINKED_DYNAMIC: 32       # 0x20 — Dynamic, linked
+      STATIC_DYNO: 64          # 0x40 — Dynamometer, static
+      STATIC_SKI: 128          # 0x80 — Ski Erg, static
+      STATIC_SKI_SIMULATOR: 143  # 0x8F — Ski simulator
+      BIKE: 192                # 0xC0 — Bike, no arms
+      BIKE_ARMS: 193           # 0xC1 — Bike, arms
+      BIKE_NOARMS: 194         # 0xC2 — Bike, no arms
+      BIKE_SIMULATOR: 207      # 0xCF — Bike simulator
+      MULTIERG_ROW: 224        # 0xE0 — Multi-erg row
+      MULTIERG_SKI: 225        # 0xE1 — Multi-erg ski
+      MULTIERG_BIKE: 226       # 0xE2 — Multi-erg bike
+      NUM: 227                 # 0xE3 — Number of machine types
+
+  # ---------------------------------------------------------------------------
+  # Workout Type (p94)
+  # ---------------------------------------------------------------------------
+  WorkoutType:
+    description: "Workout types"
+    spec_name: "OBJ_WORKOUTTYPE_T"
+    # Dart cross-ref: matches spec (sequential 0-13)
+    # Dart naming differences:
+    #   spec FIXEDCALORIE_SPLITS → Dart FIXED_CALORIE
+    #   spec FIXEDWATTMINUTE_SPLITS → Dart FIXED_WATTMINUTES
+    values:
+      JUSTROW_NOSPLITS: 0              # JustRow, no splits
+      JUSTROW_SPLITS: 1                # JustRow, splits
+      FIXEDDIST_NOSPLITS: 2            # Fixed distance, no splits
+      FIXEDDIST_SPLITS: 3              # Fixed distance, splits
+      FIXEDTIME_NOSPLITS: 4            # Fixed time, no splits
+      FIXEDTIME_SPLITS: 5              # Fixed time, splits
+      FIXEDTIME_INTERVAL: 6            # Fixed time interval
+      FIXEDDIST_INTERVAL: 7            # Fixed distance interval
+      VARIABLE_INTERVAL: 8             # Variable interval
+      VARIABLE_UNDEFINEDREST_INTERVAL: 9  # Variable interval, undefined rest
+      FIXEDCALORIE_SPLITS: 10          # Fixed calorie, splits
+      FIXEDWATTMINUTE_SPLITS: 11       # Fixed watt-minute, splits
+      FIXEDCALS_INTERVAL: 12           # Fixed calorie interval
+      NUM: 13                          # Number of workout types
+
+  # ---------------------------------------------------------------------------
+  # Interval Type (p94)
+  # ---------------------------------------------------------------------------
+  IntervalType:
+    description: "Interval types"
+    spec_name: "OBJ_INTERVALTYPE_T"
+    # Dart cross-ref: matches spec (sequential 0-9, NONE=255)
+    # Dart naming differences:
+    #   spec CALORIE → Dart CAL
+    #   spec CALORIERESTUNDEFINED → Dart CALRESTUNDEFINED
+    values:
+      TIME: 0                          # Time interval
+      DIST: 1                          # Distance interval
+      REST: 2                          # Rest interval
+      TIMERESTUNDEFINED: 3             # Time, undefined rest
+      DISTANCERESTUNDEFINED: 4         # Distance, undefined rest
+      RESTUNDEFINED: 5                 # Undefined rest
+      CALORIE: 6                       # Calorie interval
+      CALORIERESTUNDEFINED: 7          # Calorie, undefined rest
+      WATTMINUTE: 8                    # Watt-minute interval
+      WATTMINUTERESTUNDEFINED: 9       # Watt-minute, undefined rest
+      NONE: 255                        # 0xFF — No interval type
+
+  # ---------------------------------------------------------------------------
+  # Workout State (p94)
+  # ---------------------------------------------------------------------------
+  WorkoutState:
+    description: "Workout states"
+    spec_name: "OBJ_WORKOUTSTATE_T"
+    # Dart cross-ref: matches spec (sequential 0-13)
+    values:
+      WAITTOBEGIN: 0
+      WORKOUTROW: 1
+      COUNTDOWNPAUSE: 2
+      INTERVALREST: 3
+      INTERVALWORKTIME: 4
+      INTERVALWORKDISTANCE: 5
+      INTERVALRESTENDTOWORKTIME: 6
+      INTERVALRESTENDTOWORKDISTANCE: 7
+      INTERVALWORKTIMETOREST: 8
+      INTERVALWORKDISTANCETOREST: 9
+      WORKOUTEND: 10
+      TERMINATE: 11
+      WORKOUTLOGGED: 12
+      REARM: 13
+
+  # ---------------------------------------------------------------------------
+  # Rowing State (p95)
+  # ---------------------------------------------------------------------------
+  RowingState:
+    description: "Rowing states"
+    spec_name: "OBJ_ROWINGSTATE_T"
+    # Dart cross-ref: matches spec
+    values:
+      INACTIVE: 0
+      ACTIVE: 1
+
+  # ---------------------------------------------------------------------------
+  # Stroke State (p95)
+  # ---------------------------------------------------------------------------
+  StrokeState:
+    description: "Stroke states"
+    spec_name: "OBJ_STROKESTATE_T"
+    # Dart cross-ref: matches spec (sequential 0-4)
+    values:
+      WAITING_FOR_WHEEL_TO_REACH_MIN_SPEED_STATE: 0
+      WAITING_FOR_WHEEL_TO_ACCELERATE_STATE: 1
+      DRIVING_STATE: 2
+      DWELLING_AFTER_DRIVE_STATE: 3
+      RECOVERY_STATE: 4
+
+  # ---------------------------------------------------------------------------
+  # Workout Duration Type (p95)
+  # ---------------------------------------------------------------------------
+  DurationType:
+    description: "Workout duration identifier types (bitmask in high bits of duration field)"
+    spec_name: "DurationTypes"
+    # DISCREPANCY (CONFIRMED BUG in c2bluetooth Dart code):
+    # Spec defines:  TIME=0x00, CALORIES=0x40, DISTANCE=0x80, WATTMIN=0xC0
+    # Dart maps:     TIME=0x00, DISTANCE=0x40, CALORIES=0x80, WATTMIN=0xC0
+    # The Dart extension swaps CALORIES and DISTANCE values!
+    # The Dart enum comments say CALORIES=0x40 (matching spec), but the
+    # extension map contradicts the comments and has them reversed.
+    # Trust the spec — CALORIES=0x40, DISTANCE=0x80.
+    values:
+      TIME: 0          # 0x00 — duration in 0.01 sec LSB
+      CALORIES: 64     # 0x40 — duration in 1 cal LSB
+      DISTANCE: 128    # 0x80 — duration in 1 meter LSB
+      WATTMIN: 192     # 0xC0 — duration in watt-minutes
+
+  # ---------------------------------------------------------------------------
+  # Display Units Type (p95)
+  # ---------------------------------------------------------------------------
+  DisplayUnitsType:
+    description: "Display units types"
+    spec_name: "OBJ_DISPLAYUNITS_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      TIMEMETERS: 0        # Time/meters
+      PACE: 1              # Pace
+      WATTS: 2             # Watts
+      CALORICBURNRATE: 3   # Caloric burn rate
+      CALORIES: 4          # Calories
+
+  # ---------------------------------------------------------------------------
+  # Display Format Type (p95)
+  # ---------------------------------------------------------------------------
+  DisplayType:
+    description: "Display format types"
+    spec_name: "OBJ_DISPLAYTYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      STANDARD: 0          # Standard display
+      FORCEVELOCITY: 1     # Force curve display
+      PACEBOAT: 2          # Pace boats display
+      PERSTROKE: 3         # Stroke rate/heart rate display
+      SIMPLE: 4            # Large format display
+      TARGET: 5            # Target display
+
+  # ---------------------------------------------------------------------------
+  # Workout Number (pp95-96)
+  # ---------------------------------------------------------------------------
+  WorkoutNumber:
+    description: "Workout number identifiers"
+    spec_name: "OBJ_WORKOUTNUMBER_T"
+    # Dart cross-ref: matches spec (sequential 0-16)
+    values:
+      PROGRAMMED: 0        # Programmed
+      DEFAULT_1: 1         # Standard list 1
+      DEFAULT_2: 2         # Standard list 2
+      DEFAULT_3: 3         # Standard list 3
+      DEFAULT_4: 4         # Standard list 4
+      DEFAULT_5: 5         # Standard list 5
+      CUSTOM_1: 6          # Custom list 1
+      CUSTOM_2: 7          # Custom list 2
+      CUSTOM_3: 8          # Custom list 3
+      CUSTOM_4: 9          # Custom list 4
+      CUSTOM_5: 10         # Custom list 5
+      MSD_1: 11            # Favorite list 1
+      MSD_2: 12            # Favorite list 2
+      MSD_3: 13            # Favorite list 3
+      MSD_4: 14            # Favorite list 4
+      MSD_5: 15            # Favorite list 5
+      NUM: 16              # Number of workouts
+
+  # ---------------------------------------------------------------------------
+  # Workout Programming Mode (p96)
+  # ---------------------------------------------------------------------------
+  WorkoutProgrammingMode:
+    description: "Workout programming mode"
+    spec_name: "OBJ_WORKOUTPROGRAMMINGMODE_T"
+    # Not implemented in c2bluetooth Dart code
+    # NOTE: spec member names have a typo — "PROGRAMMINMODE" (missing G)
+    values:
+      DISABLE: 0
+      ENABLE: 1
+
+  # ---------------------------------------------------------------------------
+  # Stroke Rate State (p96)
+  # ---------------------------------------------------------------------------
+  StrokeRateState:
+    description: "Stroke rate states"
+    spec_name: "OBJ_STROKERATESTATE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      IDLE: 0
+      STEADY: 1
+      INCREASING: 2
+      DECREASING: 3
+
+  # ---------------------------------------------------------------------------
+  # Start Type (p96)
+  # ---------------------------------------------------------------------------
+  StartType:
+    description: "Race start types"
+    spec_name: "OBJ_STARTTYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      RANDOM: 0
+      COUNTDOWN: 1
+      RANDOMMODIFIED: 2
+      IMMEDIATE: 3
+      WAITFORFLYWHEEL: 4
+
+  # ---------------------------------------------------------------------------
+  # Race Operation Type (p96)
+  # ---------------------------------------------------------------------------
+  RaceOperationType:
+    description: "Race operation types"
+    spec_name: "OBJ_RACEOPERATIONTYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      DISABLE: 0
+      PARTICIPATIONREQUEST: 1
+      SLEEP: 2
+      ERGINIT: 3
+      PHYADDRINIT: 4            # Physical address / lane initialization
+      RACEWARMUP: 5
+      RACEINIT: 6
+      TIMESYNC: 7
+      RACEWAITTOSTART: 8
+      START: 9
+      FALSESTART: 10
+      TERMINATE: 11
+      IDLE: 12
+      TACHSIMENABLE: 13
+      TACHSIMDISABLE: 14
+
+  # ---------------------------------------------------------------------------
+  # Race State (pp96-97)
+  # ---------------------------------------------------------------------------
+  RaceState:
+    description: "Race states"
+    spec_name: "OBJ_RACESTATE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      IDLE: 0
+      COUNTDOWN: 1
+      ROWING: 2
+      INTERVAL_REST: 3
+      END_INTERVAL: 4
+      END_WORKOUT_RACE: 5
+      TERMINATE_WORKOUT_RACE: 6
+      FALSESTART: 7
+      INACTIVE: 8
+
+  # ---------------------------------------------------------------------------
+  # Race Type (pp97-98)
+  # ---------------------------------------------------------------------------
+  RaceType:
+    description: "Race types"
+    spec_name: "OBJ_RACETYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    # NOTE: Spec comments for values 35-36 appear to have copy-paste errors
+    # in descriptions; the member names are authoritative.
+    values:
+      FIXEDDIST_SINGLEERG: 0                             # Fixed distance, individual
+      FIXEDTIME_SINGLEERG: 1                             # Fixed time, individual
+      FIXEDDIST_TEAMERG: 2                               # Fixed distance, team
+      FIXEDTIME_TEAMERG: 3                               # Fixed time, team
+      WORKOUTRACESTART: 4                                # Workout race start
+      FIXEDCAL_SINGLEERG: 5                              # Fixed calorie, individual
+      FIXEDCAL_TEAMERG: 6                                # Fixed calorie, team
+      FIXEDDIST_RELAY_SINGLEERG: 7                       # Fixed distance, relay individual
+      FIXEDTIME_RELAY_SINGLEERG: 8                       # Fixed time, relay individual
+      FIXEDCAL_RELAY_SINGLEERG: 9                        # Fixed calorie, relay individual
+      FIXEDDIST_RELAY_TEAMERG: 10                        # Fixed distance, relay team
+      FIXEDTIME_RELAY_TEAMERG: 11                        # Fixed time, relay team
+      FIXEDCAL_RELAY_TEAMERG: 12                         # Fixed calorie, relay team
+      FIXEDDIST_MULTIACTIVITY_SEQUENTIAL_SINGLEERG: 13   # Fixed distance, multiactivity individual, sequential
+      FIXEDTIME_MULTIACTIVITY_SEQUENTIAL_SINGLEERG: 14   # Fixed time, multiactivity individual, sequential
+      FIXEDCAL_MULTIACTIVITY_SEQUENTIAL_SINGLEERG: 15    # Fixed calorie, multiactivity individual, sequential
+      FIXEDDIST_MULTIACTIVITY_SEQUENTIAL_TEAMERG: 16     # 0x10 — Fixed distance, multiactivity team, sequential
+      FIXEDTIME_MULTIACTIVITY_SEQUENTIAL_TEAMERG: 17     # Fixed time, multiactivity team, sequential
+      FIXEDCAL_MULTIACTIVITY_SEQUENTIAL_TEAMERG: 18      # Fixed calorie, multiactivity team, sequential
+      FIXEDDIST_ERGATHLON: 19                            # Fixed distance, Ergathlon
+      FIXEDTIME_ERGATHLON: 20                            # Fixed time, Ergathlon
+      FIXEDCAL_ERGATHLON: 21                             # Fixed calorie, Ergathlon
+      FIXEDDIST_MULTIACTIVITY_SIMULTANEOUS_SINGLEERG: 22  # Fixed distance, multiactivity individual, simultaneous
+      FIXEDTIME_MULTIACTIVITY_SIMULTANEOUS_SINGLEERG: 23  # Fixed time, multiactivity individual, simultaneous
+      FIXEDCAL_MULTIACTIVITY_SIMULTANEOUS_SINGLEERG: 24   # Fixed calorie, multiactivity individual, simultaneous
+      FIXEDDIST_MULTIACTIVITY_SIMULTANEOUS_TEAMERG: 25    # Fixed distance, multiactivity team, simultaneous
+      FIXEDTIME_MULTIACTIVITY_SIMULTANEOUS_TEAMERG: 26    # Fixed time, multiactivity team, simultaneous
+      FIXEDCAL_MULTIACTIVITY_SIMULTANEOUS_TEAMERG: 27     # Fixed calorie, multiactivity team, simultaneous
+      FIXEDDIST_BIATHLON: 28                             # Fixed distance, Biathlon
+      FIXEDCAL_BIATHLON: 29                              # Fixed calorie, Biathlon
+      FIXEDDIST_RELAY_NOCHANGE_SINGLEERG: 30             # Fixed distance, no change prompt, relay individual
+      FIXEDTIME_RELAY_NOCHANGE_SINGLEERG: 31             # Fixed time, no change prompt, relay individual
+      FIXEDCAL_RELAY_NOCHANGE_SINGLEERG: 32              # 0x20 — Fixed calorie, no change prompt, relay individual
+      FIXEDTIME_CALSCORE_SINGLEERG: 33                   # Fixed time, calorie score, individual
+      FIXEDTIME_CALSCORE_TEAMERG: 34                     # Fixed time, calorie score, team
+      FIXEDDIST_TIMECAP_SINGLEERG: 35                    # Fixed distance, time cap, individual
+      FIXEDCAL_TIMECAP_SINGLEERG: 36                     # Fixed calorie, time cap, individual
+
+  # ---------------------------------------------------------------------------
+  # Race Start State (p98)
+  # ---------------------------------------------------------------------------
+  RaceStartState:
+    description: "Race start states"
+    spec_name: "OBJ_RACESTARTSTATE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      INIT: 0
+      PREPARE: 1
+      WAITREADY: 2
+      WAITATTENTION: 3
+      WAITROW: 4
+      COUNTDOWN: 5
+      ROW: 6
+      FALSESTART: 7
+
+  # ---------------------------------------------------------------------------
+  # Screen Type (p98)
+  # ---------------------------------------------------------------------------
+  ScreenType:
+    description: "Screen types"
+    spec_name: "OBJ_SCREENTYPE_T"
+    # Dart cross-ref: matches spec (sequential 0-5 via index)
+    # NOTE: Spec inline comments for WORKOUT through MFG are off-by-one
+    # (they say WORKOUT=0, RACE=1, etc.) because they appear to ignore the
+    # NONE member. C enum rules give NONE=0, WORKOUT=1, etc.
+    # The Dart code correctly uses index-based values (NONE=0, WORKOUT=1).
+    values:
+      NONE: 0
+      WORKOUT: 1
+      RACE: 2
+      CSAFE: 3
+      DIAG: 4
+      MFG: 5
+
+  # ---------------------------------------------------------------------------
+  # Screen Value — Workout Type (pp98-99)
+  # ---------------------------------------------------------------------------
+  ScreenValueWorkout:
+    description: "Screen value commands for workout screen type"
+    spec_name: "OBJ_SCREENVALUEWORKOUT_T"
+    # Dart cross-ref: matches spec (all values verified against extension map)
+    values:
+      NONE: 0
+      PREPARETOROWWORKOUT: 1
+      TERMINATEWORKOUT: 2
+      REARMWORKOUT: 3
+      REFRESHLOGCARD: 4
+      PREPARETORACESTART: 5
+      GOTOMAINSCREEN: 6
+      LOGCARDBUSYWARNING: 7
+      LOGCARDSELECTUSER: 8
+      RESETRACEPARAMS: 9
+      CABLETESTSLAVE: 10
+      FISHGAME: 11
+      DISPLAYPARTICIPANTINFO: 12
+      DISPLAYPARTICIPANTINFOCONFIRM: 13
+      # gap: 14-19 unused
+      CHANGEDISPLAYTYPETARGET: 20      # 0x14
+      CHANGEDISPLAYTYPESTANDARD: 21
+      CHANGEDISPLAYTYPEFORCEVELOCITY: 22
+      CHANGEDISPLAYTYPEPACEBOAT: 23
+      CHANGEDISPLAYTYPEPERSTROKE: 24
+      CHANGEDISPLAYTYPESIMPLE: 25
+      # gap: 26-29 unused
+      CHANGEUNITSTYPETIMEMETERS: 30    # 0x1E
+      CHANGEUNITSTYPEPACE: 31
+      CHANGEUNITSTYPEWATTS: 32         # 0x20
+      CHANGEUNITSTYPECALORICBURNRATE: 33
+      TARGETGAMEBASIC: 34
+      TARGETGAMEADVANCED: 35
+      DARTGAME: 36
+      GOTOUSBWAITREADY: 37
+      TACHCABLETESTDISABLE: 38
+      TACHSIMDISABLE: 39
+      TACHSIMENABLERATE1: 40           # rate = 1:12
+      TACHSIMENABLERATE2: 41           # rate = 1:35
+      TACHSIMENABLERATE3: 42           # rate = 1:42
+      TACHSIMENABLERATE4: 43           # rate = 3:04
+      TACHSIMENABLERATE5: 44           # rate = 3:14
+      TACHCABLETESTENABLE: 45
+      CHANGEUNITSTYPECALORIES: 46
+      VIRTUALKEY_A: 47
+      VIRTUALKEY_B: 48
+      VIRTUALKEY_C: 49
+      VIRTUALKEY_D: 50
+      VIRTUALKEY_E: 51
+      VIRTUALKEY_UNITS: 52
+      VIRTUALKEY_DISPLAY: 53
+      VIRTUALKEY_MENU: 54
+      TACHSIMENABLERATERANDOM: 55
+      # gap: 56-254 unused
+      SCREENREDRAW: 255                # 0xFF
+
+  # ---------------------------------------------------------------------------
+  # Screen Value — Race Type (pp99-100)
+  # ---------------------------------------------------------------------------
+  ScreenValueRace:
+    description: "Screen value commands for race screen type"
+    spec_name: "OBJ_SCREENVALUERACE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      NONE: 0
+      SETPHYSICALADDR: 1
+      CONFIRMPHYSICALADDR: 2
+      WARMUPFORRACE: 3
+      PREPARETORACE: 4
+      FALSESTARTRACE: 5
+      TERMINATERACE: 6
+      AUTOSETPHYSADDR: 7
+      SETPARTICIPANTLIST: 8
+      SYNCRACETIME: 9
+      PREPARETOSLEEP: 10
+      RESETRACEPARAMS: 11
+      SETDEFAULTCOMMPARAMS: 12
+      RACEIDLE: 13
+      ERGADDRESSSTATUS: 14
+      RACEIDLEROW: 15
+      DISPLAYRACEBITMAP: 16            # 0x10
+      DISPLAYRACETEXTSTRING: 17
+      SETLOGICALADDR: 18
+      CONFIRMLOGICALADDR: 19
+      ERGSLAVEDISCOVERY: 20
+      GOTOMAINSCREEN: 21
+      RESETERG: 22
+      SETUNITSTYPEDEFAULT: 23
+      # gap: 24-38 unused
+      TACHSIMDISABLE: 39
+      TACHSIMENABLERATE1: 40           # rate = 1:12
+      TACHSIMENABLERATE2: 41           # rate = 1:35
+      TACHSIMENABLERATE3: 42           # rate = 1:42
+      TACHSIMENABLERATE4: 43           # rate = 3:04
+      TACHSIMENABLERATE5: 44           # rate = 3:14
+      TACHCABLETESTENABLE: 45
+      ERGATHLONMODEDISABLE: 46
+      RS485FIRMWAREUPDATEPROGRESS: 47
+      TERMINATERACEANDPRESERVERESULTS: 48
+      TACHSIMENABLERATERANDOM: 49
+      # gap: 50-254 unused
+      SCREENREDRAW: 255                # 0xFF
+
+  # ---------------------------------------------------------------------------
+  # Screen Value — CSAFE Type (p100)
+  # ---------------------------------------------------------------------------
+  ScreenValueCsafe:
+    description: "Screen value commands for CSAFE screen type"
+    spec_name: "OBJ_SCREENVALUECSAFE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      NONE: 0
+      USERID: 1                        # Enter user ID
+      PREPARETOROWWORKOUT: 2           # Prepare to workout
+      GOTOMAINSCREEN: 3                # Go to main screen
+      CUSTOM: 4                        # Go to custom screen
+      # gap: 5-249 unused
+      RACECHANOPEN: 250                # 0xFA — Open racing channel
+      RACECHANCLOSE: 251               # 0xFB — Close racing channel
+      # gap: 252-254 unused
+      SCREENREDRAW: 255                # 0xFF
+
+  # ---------------------------------------------------------------------------
+  # Screen Pending Flag (p100)
+  # ---------------------------------------------------------------------------
+  ScreenPendingFlag:
+    description: "Screen command pending status flags"
+    spec_name: "APGLOBALS_SCREENPENDINGFLG"
+    # Anonymous enum in spec (no typedef name)
+    # Not implemented in c2bluetooth Dart code
+    values:
+      INACTIVE: 0
+      PENDING: 1
+      INPROGRESS: 2
+
+  # ---------------------------------------------------------------------------
+  # Status Type (p100)
+  # ---------------------------------------------------------------------------
+  StatusType:
+    description: "Status types for PM status reporting"
+    spec_name: "OBJ_STATUSTYPE_T"
+    # Not implemented in c2bluetooth Dart code
+    # NOTE: LOGCARD_STATE is an explicit alias for LOGDEVICE_STATE (both = 3)
+    values:
+      NONE: 0
+      BATTERY_LEVEL1_WARNING: 1        # status value = (current/max battery)*100
+      BATTERY_LEVEL2_WARNING: 2        # status value = (current/max battery)*100
+      LOGDEVICE_STATE: 3               # status value = log device status
+      # LOGCARD_STATE is an alias: LOGCARD_STATE = LOGDEVICE_STATE = 3
+      POWERSOURCE_STATE: 4             # status value = power source status
+      LOGCARD_WORKOUTLOGGED_STATUS: 5  # status value = workout logged status
+      FLYWHEEL_STATE: 6                # status value = not turning / turning
+      BAD_UTILITY_STATE: 7             # status value = correct utility / wrong utility
+      FWUPDATE_STATUS: 8               # status value = no update pending / pending / complete
+      UNSUPPORTEDUSBHOSTDEVICE: 9      # status value = unused
+      USBDRIVE_STATE: 10               # status value = uninitialized / initialized
+      LOADCONTROL_STATUS: 11           # USB host / backlight load control
+      USBLOGBOOK_STATUS: 12            # dir missing, file missing, validated
+      LOGSTORAGECAPACITYWARNING_STATUS: 13  # status value = current used capacity
+      FACTORYCALIBRATION_WARNING: 14   # status value = unused
+      VERIFYCALIBRATION_WARNING: 15    # status value = unused
+      SERVICECALIBRATION_WARNING: 16   # status value = unused
+
+  # ---------------------------------------------------------------------------
+  # Display Update Rate (p101)
+  # ---------------------------------------------------------------------------
+  DisplayUpdateRate:
+    description: "Display update rate values"
+    spec_name: "OBJ_DISPLAYUPDATERATE_T"
+    # Not implemented in c2bluetooth Dart code
+    values:
+      RATE_5HZ: 0           # 5 Hz
+      RATE_4HZ: 1           # 4 Hz
+      RATE_2HZ: 2           # 2 Hz
+
+  # ---------------------------------------------------------------------------
+  # Wireless Channel Flags (p101)
+  # ---------------------------------------------------------------------------
+  WirelessChannelFlag:
+    description: "Wireless channel bit flags"
+    spec_name: "OBJ_WIRELESSCHANNELFLG_T"
+    # Not implemented in c2bluetooth Dart code
+    # These are bit flags (powers of 2), not sequential enum values
+    is_bitfield: true
+    values:
+      NFC: 1               # 0x00000001 — NFC channel
+      BLEHRM: 2            # 0x00000002 — BLE HRM channel
+      BLEMOBILE: 4          # 0x00000004 — BLE mobile channel
+      ANTHRM: 8            # 0x00000008 — ANT+ HRM channel
+      ANTRACING: 16         # 0x00000010 — ANT+ racing channel
+      ANTFE: 32             # 0x00000020 — ANT+ FE channel
+      ANTFEC: 64            # 0x00000040 — ANT+ FEC channel
+      ANTSPDCAD: 128        # 0x00000080 — ANT+ speed/cadence channel
+      ANTBPWR: 256          # 0x00000100 — ANT+ cycling power channel
+      ANTFECGRP: 512        # 0x00000200 — ANT+ FEC group channel
+      UNUSED: 4294967295    # 0xFFFFFFFF — Unused (sentinel)
+
+  # ---------------------------------------------------------------------------
+  # Game ID (p102)
+  # ---------------------------------------------------------------------------
+  GameId:
+    description: "Game identifiers"
+    spec_name: "APGLOBALS_GAMEID"
+    # Anonymous enum in spec (no typedef name)
+    # Dart cross-ref: matches spec (sequential 0-5 via index)
+    values:
+      NONE: 0
+      FISH: 1
+      DART: 2
+      TARGET_BASIC: 3
+      TARGET_ADVANCED: 4
+      CROSSTRAINING: 5
+
+
+# =============================================================================
+# Constants (not typedef enums, but defined in Appendix A)
+# =============================================================================
+
+constants:
+
+  # ---------------------------------------------------------------------------
+  # Log Structure Identifiers (p101)
+  # ---------------------------------------------------------------------------
+  LogStructureIdentifiers:
+    description: "PM5 log record structure identifiers"
+    values:
+      LOGMAP_RECIDENT_PM5_LOGHEADER: 21
+      LOGMAP_RECIDENT_PM5_LOGFIXEDHEADERDATA: 22
+      LOGMAP_RECIDENT_PM5_LOGSPLITDATA: 23
+      LOGMAP_RECIDENT_PM5_LOGFIXEDINTERVALHEADER: 24
+      LOGMAP_RECIDENT_PM5_LOGFIXEDINTERVALDATA: 25
+      LOGMAP_RECIDENT_PM5_LOGVARIABLEINTERVALHEADER: 26
+      LOGMAP_RECIDENT_PM5_LOGVARIABLEINTERVALDATA: 27
+      LOGMAP_RECIDENT_PM5_COMBINED_LOGHEADER_LOGFIXEDHEADERDATA: 128     # 0x80
+      LOGMAP_RECIDENT_PM5_COMBINED_LOGHEADER_LOGFIXEDINTERVALHEADER: 129  # 0x81
+      LOGMAP_RECIDENT_PM5_COMBINED_LOGHEADER_LOGVARIABLEINTERVALHEADER: 130  # 0x82
+
+  # ---------------------------------------------------------------------------
+  # CPU Speed / Tick Rate (p101)
+  # ---------------------------------------------------------------------------
+  CpuSpeedTickRate:
+    description: "CPU speed settings and corresponding tick rates"
+    values:
+      LOW_SPEED: 4         # 128 ticks/sec
+      MED_SPEED: 2         # 256 ticks/sec
+      HIGH_SPEED: 1        # 512 ticks/sec

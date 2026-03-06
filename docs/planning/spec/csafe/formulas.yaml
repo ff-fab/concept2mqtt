@@ -1,0 +1,405 @@
+# PM5 Conversion Formulas & Data Representation
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25
+# Appendix B (pp104-108)
+#
+# All formulas for pace, watts, calorie conversions on the Concept2 ergometers,
+# plus multi-byte data construction/deconstruction rules and resolution specs.
+
+# ---------------------------------------------------------------------------
+# Data resolution rules
+# ---------------------------------------------------------------------------
+data_resolution:
+  description: >
+    Resolution and rounding rules for time, distance, and stroke rate
+    on the PM5 display and in stored workout logs.
+  display:
+    meters:
+      resolution: 1
+      unit: "m"
+      rounding: "none (no rounding/truncating)"
+    elapsed_time:
+      resolution: 1
+      unit: "s"
+      rounding: "truncated from floating point"
+    avg_pace:
+      resolution: 0.1
+      unit: "s"
+      rounding: "rounded from 0.01s"
+    stroke_rate:
+      resolution: 1
+      unit: "spm"
+      rounding: "rounded from floating point"
+  workout_log:
+    meters:
+      resolution: 1
+      unit: "m"
+      rounding: "none"
+    time:
+      resolution: 0.1
+      unit: "s"
+      rounding: "rounded from 0.01s"
+    stroke_rate:
+      resolution: 1
+      unit: "spm"
+      rounding: "interval stroke rates summed at 1 spm then average truncated to 1 spm"
+
+# ---------------------------------------------------------------------------
+# Data calculation rules
+# ---------------------------------------------------------------------------
+data_calculation:
+  description: >
+    How the PM5 derives displayed and stored values from internal
+    floating-point accumulators.
+  display:
+    workout_summary:
+      elapsed_time: "Floating-point time truncated to 0.1 s"
+      total_distance: "1 m resolution"
+    stroke_pace:
+      method: "Floating-point distance and time → pace rounded to 1 s"
+    avg_pace:
+      method: "Floating-point distance and time → pace rounded to 0.1 s"
+    split_pace:
+      method: "Floating-point distance and time → pace rounded to 0.1 s"
+    stroke_rate:
+      method: "Floating-point stroke duration rounded to 1 spm"
+    avg_stroke_rate:
+      method: "Stroke count / floating-point elapsed time truncated to 1 spm"
+  workout_log:
+    stroke_rate: "Per-interval rates (1 spm) averaged, truncated to 1 spm"
+    elapsed_time: "Floating-point rounded from 0.01 s to 0.1 s"
+    total_distance: "1 m resolution"
+    avg_pace: "Computed from rounded time and distance, truncated to 0.1 s"
+
+# ---------------------------------------------------------------------------
+# Pace ↔ Watts conversion
+# ---------------------------------------------------------------------------
+pace_watts:
+  description: "Conversion between pace (time per 500 m) and power (watts)"
+  source: "Appendix B, p104 — 'Watts = (2.8 / (pace * pace * pace))'"
+  formula_latex: "W = \\frac{2.80}{t^{3}}"
+  constant:
+    value: 2.80
+    note: >
+      Empirical constant for the Concept2 air-resistance flywheel model.
+      Source: Concept2 PM CSAFE spec and
+      https://www.concept2.com/indoor-rowers/training/calculators/watts-calculator
+  variables:
+    W:
+      unit: "watts"
+      description: "Mechanical power output"
+    t:
+      unit: "seconds per meter"
+      description: "Pace expressed as seconds per 1 metre (NOT seconds per 500 m)"
+  forward:
+    name: "pace_to_watts"
+    input: "pace in seconds per 500 metres"
+    output: "watts"
+    steps:
+      - "Convert pace to sec/m: t = pace_500m / 500"
+      - "Calculate watts: W = 2.80 / t^3"
+    python: |
+      def pace_to_watts(pace_500m: float) -> float:
+          """Convert a /500 m split (seconds) to watts."""
+          t = pace_500m / 500.0
+          return 2.80 / (t ** 3)
+  inverse:
+    name: "watts_to_pace"
+    input: "watts"
+    output: "pace in seconds per 500 metres"
+    steps:
+      - "Calculate sec/m: t = (2.80 / W) ^ (1/3)"
+      - "Convert to sec/500 m: pace = t × 500"
+    python: |
+      def watts_to_pace(watts: float) -> float:
+          """Convert watts to a /500 m split (seconds)."""
+          t = (2.80 / watts) ** (1 / 3)
+          return t * 500.0
+  known_values:
+    - { pace_500m: 120.0, watts_approx: 203.7, note: "2:00 /500 m" }
+    - { pace_500m: 105.0, watts_approx: 304.0, note: "1:45 /500 m" }
+    - { pace_500m: 150.0, watts_approx: 103.7, note: "2:30 /500 m" }
+  cross_ref:
+    c2bluetooth:
+      file: "lib/helpers.dart"
+      functions:
+        - "splitToWatts(Duration split) — pace to watts"
+        - "wattsToSplit(double watts)   — watts to pace string"
+      notes: >
+        Legacy code divides split.inMilliseconds by 1000 to get total seconds,
+        then divides by 500 before cubing — identical to the spec formula.
+
+# ---------------------------------------------------------------------------
+# Calories/Hr ↔ Pace conversion
+# ---------------------------------------------------------------------------
+calories:
+  description: "Calorie-rate calculation from pace (and therefore from watts)"
+  source: "Appendix B, p104"
+  formula_latex: >
+    \\text{Cal/hr} = \\left(\\frac{2.80}{t^{3}} \\times 4.0 \\times 0.8604\\right) + 300
+  formula_simplified_latex: >
+    \\text{Cal/hr} = W \\times 3.4416 + 300
+  constants:
+    efficiency_factor:
+      value: 4.0
+      note: >
+        Mechanical-efficiency multiplier. Assumes ~25 % rowing efficiency
+        (total metabolic cost ≈ 4 × mechanical power).
+    watts_to_cal_hr:
+      value: 0.8604
+      note: >
+        Converts watts (J/s) to kcal/hr.
+        1 kcal = 4186.8 J → 1 kcal/hr = 1.163 W → 1/1.163 ≈ 0.8598.
+        The spec uses 0.8604 (minor rounding difference).
+    combined_factor:
+      value: 3.4416
+      note: "4.0 × 0.8604 — the product used in the simplified form"
+    resting_cal_hr:
+      value: 300.0
+      unit: "kcal/hr"
+      note: "Baseline resting metabolic rate added to exercise calories"
+  variables:
+    cal_hr:
+      unit: "kcal/hr"
+      description: "Calorie burn rate"
+    t:
+      unit: "seconds per meter"
+      description: "Pace in sec/m"
+    W:
+      unit: "watts"
+      description: "Mechanical power (can substitute from pace_watts formula)"
+  forward:
+    name: "pace_to_cal_hr"
+    input: "pace in seconds per 500 metres"
+    output: "kcal/hr"
+    steps:
+      - "Convert pace to sec/m: t = pace_500m / 500"
+      - "Calculate watts: W = 2.80 / t^3"
+      - "Calculate cal/hr: cal_hr = (W × 4.0 × 0.8604) + 300.0"
+    python: |
+      def pace_to_cal_hr(pace_500m: float) -> float:
+          """Convert a /500 m split (seconds) to kcal/hr."""
+          t = pace_500m / 500.0
+          watts = 2.80 / (t ** 3)
+          return (watts * 4.0 * 0.8604) + 300.0
+  from_watts:
+    name: "watts_to_cal_hr"
+    input: "watts"
+    output: "kcal/hr"
+    python: |
+      def watts_to_cal_hr(watts: float) -> float:
+          """Convert watts to kcal/hr."""
+          return (watts * 4.0 * 0.8604) + 300.0
+  inverse:
+    name: "cal_hr_to_watts"
+    input: "kcal/hr"
+    output: "watts"
+    steps:
+      - "Subtract resting rate: net = cal_hr − 300.0"
+      - "Divide by combined factor: W = net / 3.4416"
+    python: |
+      def cal_hr_to_watts(cal_hr: float) -> float:
+          """Convert kcal/hr back to watts."""
+          return (cal_hr - 300.0) / (4.0 * 0.8604)
+  cross_ref:
+    concept2_website: "https://www.concept2.com/indoor-rowers/training/calculators/calorie-calculator"
+
+# ---------------------------------------------------------------------------
+# Pace ↔ /500 m pace
+# ---------------------------------------------------------------------------
+pace_500m:
+  description: "Convert raw pace (sec/m) to the conventional /500 m display format"
+  source: "Appendix B, p104 — 'Pace/500m = (pace * 500)'"
+  formula_latex: "\\text{pace}_{500} = t \\times 500"
+  variables:
+    t:
+      unit: "seconds per meter"
+      description: "Raw pace"
+    pace_500:
+      unit: "seconds per 500 m"
+      description: "Display-format pace (e.g. 2:00.0 = 120.0 s)"
+  forward:
+    name: "raw_pace_to_500m"
+    input: "pace in seconds per meter"
+    output: "pace in seconds per 500 metres"
+    python: |
+      def raw_pace_to_500m(sec_per_m: float) -> float:
+          return sec_per_m * 500.0
+  inverse:
+    name: "pace_500m_to_raw"
+    input: "pace in seconds per 500 metres"
+    output: "pace in seconds per meter"
+    python: |
+      def pace_500m_to_raw(pace_500m: float) -> float:
+          return pace_500m / 500.0
+
+# ---------------------------------------------------------------------------
+# Multi-byte data construction (bytes → values)
+# ---------------------------------------------------------------------------
+data_construction:
+  description: >
+    Rules for assembling multi-byte integer values from byte arrays.
+    Byte ordering differs between BLE notifications and CSAFE commands —
+    always check the protocol context.  All arithmetic is integer.
+  source: "Appendix B, pp105-106"
+  two_byte:
+    byte_order: "[Hi, Lo] or [MSB, LSB]"
+    formula: "value = data_hi × 256 + data_lo"
+    python: |
+      def construct_u16_msb(hi: int, lo: int) -> int:
+          """Construct a 16-bit value from [MSB, LSB] pair."""
+          return (hi << 8) | lo
+    example:
+      input: [0, 200, 1, 150, 8, 0, 50, 15, 100, 23]
+      output: [200, 406, 2048, 12815, 25623]
+  three_byte:
+    byte_order: "[Lo, Mid, Hi]"
+    formula: "value = data_hi × 65536 + data_mid × 256 + data_lo"
+    python: |
+      def construct_u24_lsb(lo: int, mid: int, hi: int) -> int:
+          """Construct a 24-bit value from [Lo, Mid, Hi] triple."""
+          return (hi << 16) | (mid << 8) | lo
+    example:
+      input: [33, 3, 0, 150, 8, 4, 50, 30, 10]
+      output: [801, 264342, 663090]
+      errata: >
+        The spec PDF prints 663,106 for value2 but the arithmetic gives
+        (10 × 65536) + (30 × 256) + 50 = 663,090.  This is a typo in
+        Rev 0.25.
+  four_byte:
+    byte_order: "[Lo, Mid Lo, Mid Hi, Hi]"
+    formula: "value = data3 × 16777216 + data2 × 65536 + data1 × 256 + data0"
+    python: |
+      def construct_u32_lsb(b0: int, b1: int, b2: int, b3: int) -> int:
+          """Construct a 32-bit value from [Lo, MidLo, MidHi, Hi]."""
+          return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+    example:
+      input: [4, 3, 2, 1, 1, 2, 3, 4]
+      output: [16909060, 67305985]
+  cross_ref:
+    c2bluetooth:
+      file: "lib/extensions.dart"
+      notes: >
+        Concept2DurationExtension.fromBytes uses CsafeIntExtension.fromBytes
+        with Endian.little for 3-byte duration values (hundredths of seconds × 10
+        to get milliseconds).
+
+# ---------------------------------------------------------------------------
+# Multi-byte data deconstruction (values → bytes)
+# ---------------------------------------------------------------------------
+data_deconstruction:
+  description: >
+    Rules for breaking multi-byte integer values into byte arrays.
+    All arithmetic is integer division (truncation).
+  source: "Appendix B, pp106-108"
+  two_byte:
+    byte_order: "[Hi, Lo] or [MSB, LSB]"
+    formula:
+      - "data_hi  = value / 256"
+      - "data_lo  = value − (data_hi × 256)"
+    python: |
+      def deconstruct_u16_msb(value: int) -> tuple[int, int]:
+          """Split a 16-bit value into (MSB, LSB)."""
+          return (value >> 8) & 0xFF, value & 0xFF
+    example:
+      input: [257, 32767, 63, 60000]
+      output: [1, 1, 127, 255, 0, 63, 234, 96]
+  three_byte:
+    byte_order: "[Lo, Mid, Hi]"
+    formula:
+      - "data_hi  = value / 65536"
+      - "data_mid = (value − data_hi × 65536) / 256"
+      - "data_lo  = value − data_hi × 65536 − data_mid × 256"
+    python: |
+      def deconstruct_u24_lsb(value: int) -> tuple[int, int, int]:
+          """Split a 24-bit value into (Lo, Mid, Hi)."""
+          return value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF
+    example:
+      input: [65537, 150000, 57]
+      output: [1, 0, 1, 240, 73, 2, 57, 0, 0]
+  four_byte:
+    byte_order: "[Lo, Mid Lo, Mid Hi, Hi]"
+    formula:
+      - "data3 = value / 16777216"
+      - "data2 = (value − data3 × 16777216) / 65536"
+      - "data1 = (value − data3 × 16777216 − data2 × 65536) / 256"
+      - "data0 = value − data3 × 16777216 − data2 × 65536 − data1 × 256"
+    python: |
+      def deconstruct_u32_lsb(value: int) -> tuple[int, int, int, int]:
+          """Split a 32-bit value into (Lo, MidLo, MidHi, Hi)."""
+          return (
+              value & 0xFF,
+              (value >> 8) & 0xFF,
+              (value >> 16) & 0xFF,
+              (value >> 24) & 0xFF,
+          )
+    example:
+      input: [16909060, 67305985]
+      output: [4, 3, 2, 1, 1, 2, 3, 4]
+  cross_ref:
+    c2bluetooth:
+      file: "lib/extensions.dart"
+      notes: >
+        Concept2DurationExtension.toBytes encodes milliseconds ÷ 10
+        (hundredths of seconds) into 3 little-endian bytes via
+        CsafeIntExtension.toBytes.
+
+# ---------------------------------------------------------------------------
+# Date/time byte encoding (supplementary — from legacy code)
+# ---------------------------------------------------------------------------
+date_time_encoding:
+  description: >
+    Concept2 packed date/time format used in BLE workout timestamps.
+    Two bytes for date, one byte minutes, one byte hours.
+  source: "Legacy c2bluetooth implementation; see also https://www.c2forum.com/viewtopic.php?f=15&t=200769"
+  date_word:
+    bits:
+      - { range: "3:0",   field: "month", width: 4 }
+      - { range: "8:4",   field: "day",   width: 5 }
+      - { range: "15:9",  field: "year",  width: 7, note: "offset from 2000" }
+    byte_order: "[Date Lo, Date Hi, Minutes, Hours]"
+    python: |
+      def decode_c2_datetime(data: bytes) -> tuple[int, int, int, int, int]:
+          """Decode 4-byte Concept2 date/time → (year, month, day, hour, minute)."""
+          date_word = data[0] | (data[1] << 8)
+          month = date_word & 0x0F
+          day = (date_word >> 4) & 0x1F
+          year = ((date_word >> 9) & 0x7F) + 2000
+          minute = data[2]
+          hour = data[3]
+          return year, month, day, hour, minute
+  cross_ref:
+    c2bluetooth:
+      files:
+        - "lib/helpers.dart — timeFromBytes()"
+        - "lib/extensions.dart — Concept2DateExtension.fromBytes()"
+
+# ---------------------------------------------------------------------------
+# Duration byte encoding (supplementary — from legacy code)
+# ---------------------------------------------------------------------------
+duration_encoding:
+  description: >
+    Workout durations are stored as 3 little-endian bytes representing
+    hundredths of seconds (centiseconds).
+  byte_count: 3
+  unit: "centiseconds (0.01 s)"
+  conversion_to_ms: "value × 10"
+  python: |
+    def decode_c2_duration_ms(data: bytes) -> int:
+        """Decode 3-byte LE centisecond duration to milliseconds."""
+        centiseconds = data[0] | (data[1] << 8) | (data[2] << 16)
+        return centiseconds * 10
+
+    def encode_c2_duration_ms(ms: int) -> bytes:
+        """Encode milliseconds to 3-byte LE centisecond duration."""
+        centiseconds = ms // 10
+        return bytes([
+            centiseconds & 0xFF,
+            (centiseconds >> 8) & 0xFF,
+            (centiseconds >> 16) & 0xFF,
+        ])
+  cross_ref:
+    c2bluetooth:
+      file: "lib/extensions.dart"
+      functions:
+        - "Concept2DurationExtension.fromBytes()"
+        - "Concept2DurationExtension.toBytes()"

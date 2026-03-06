@@ -1,0 +1,1782 @@
+# PM5 BLE GATT Services and Characteristics
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: Link Layer Definition, Table 14 — BLE GATT Attribute Table (pp13-29)
+
+base_uuid: "CE06XXXX-43E5-11E4-916C-0800200C9A66"
+# Replace XXXX with the 4-digit hex suffix for each service/characteristic.
+
+# Standard BLE GATT infrastructure (included for completeness, not C2-specific)
+standard_gatt:
+  cccd:
+    uuid: "0x2902"
+    name: "Client Characteristic Configuration Descriptor"
+    bytes: 2
+    permissions: ["READ", "WRITE"]
+    description: >
+      Write 01:00 to enable notifications, 00:00 to disable.
+      Required for all NOTIFY characteristics below.
+  peripheral_preferred_connection_parameters:
+    uuid: "0x2A04"
+    name: "Peripheral Preferred Connection Parameters"
+    bytes: 8
+    permissions: ["READ"]
+    description: >
+      30ms min/max connection interval, 0 slave latency,
+      10000ms supervision timeout.
+  gatt_service:
+    uuid: "0x1801"
+    name: "GATT Service"
+    permissions: ["READ"]
+    description: "Mandatory GATT service."
+  service_changed:
+    uuid: "0x2A05"
+    name: "Service Changed"
+    permissions: []
+    description: "Service changed characteristic (null value)."
+
+services:
+  # ---------------------------------------------------------------------------
+  # Device Information Service
+  # ---------------------------------------------------------------------------
+  device_information:
+    uuid_suffix: "0x0010"
+    name: "C2 Device Information Service"
+    description: "Device identification and version information."
+    # Cross-ref: c2bluetooth constants.dart — C2_DEVICE_INFO_SERVICE_UUID
+    # Cross-ref: pROWess main.py — PM5UUID['getSerial'] uses 0x0012
+
+    characteristics:
+      model_number:
+        uuid_suffix: "0x0011"
+        name: "Model Number String"
+        bytes: 16
+        permissions: ["READ"]
+        description: 'Model number string (e.g. "PM5").'
+        firmware_versions:
+          - "PM5 V150 – V199.99"
+          - "PM5 V204 – V299.99"
+        data_format:
+          fields:
+            - name: model_number
+              offset: 0
+              length: 16
+              type: utf8
+              description: "Model number string, null-padded."
+        # Cross-ref: c2bluetooth constants.dart — (commented, line 40: CE060010)
+
+      serial_number:
+        uuid_suffix: "0x0012"
+        name: "Serial Number String"
+        bytes: 9
+        permissions: ["READ"]
+        description: "PM serial number string."
+        data_format:
+          fields:
+            - name: serial_number
+              offset: 0
+              length: 9
+              type: utf8
+              description: "Serial number string."
+        # Cross-ref: c2bluetooth constants.dart — (commented, line 41: CE060012)
+        # Cross-ref: pROWess main.py — PM5UUID['getSerial'] (line 225)
+
+      hardware_revision:
+        uuid_suffix: "0x0013"
+        name: "Hardware Revision String"
+        bytes: 3
+        permissions: ["READ"]
+        description: "Hardware revision string."
+        data_format:
+          fields:
+            - name: hardware_revision
+              offset: 0
+              length: 3
+              type: utf8
+              description: "Hardware revision string."
+        # Cross-ref: c2bluetooth constants.dart — (commented, line 42: CE060013)
+
+      firmware_revision:
+        uuid_suffix: "0x0014"
+        name: "Firmware Revision String"
+        bytes: 20
+        permissions: ["READ"]
+        description: "Firmware revision string."
+        data_format:
+          fields:
+            - name: firmware_revision
+              offset: 0
+              length: 20
+              type: utf8
+              description: "Firmware revision string."
+        # Cross-ref: c2bluetooth constants.dart — (commented, line 43: CE060014)
+
+      manufacturer_name:
+        uuid_suffix: "0x0015"
+        name: "Manufacturer Name String"
+        bytes: 16
+        permissions: ["READ"]
+        description: 'Manufacturer name string ("Concept2").'
+        data_format:
+          fields:
+            - name: manufacturer_name
+              offset: 0
+              length: 16
+              type: utf8
+              description: 'Fixed value "Concept2", null-padded.'
+        # Cross-ref: c2bluetooth constants.dart — (commented, line 44: CE060015)
+
+      erg_machine_type:
+        uuid_suffix: "0x0016"
+        name: "Erg Machine Type"
+        bytes: 1
+        permissions: ["READ"]
+        description: "Connected erg machine type (enumerated value, see Appendix)."
+        firmware_versions:
+          - "PM5 V150 – V199.99"
+          - "PM5 V204 – V299.99"
+        data_format:
+          fields:
+            - name: erg_machine_type
+              offset: 0
+              length: 1
+              type: uint8
+              description: "Erg Machine Type enum value."
+
+      att_mtu:
+        uuid_suffix: "0x0017"
+        name: "ATT MTU"
+        bytes: 2
+        permissions: ["READ"]
+        description: "ATT Rx MTU size (23–512 bytes)."
+        firmware_versions:
+          - "PM5 V168.050 – V199.99"
+          - "PM5 V204.006 – V299.99"
+        data_format:
+          fields:
+            - name: att_rx_mtu
+              offset: 0
+              length: 2
+              type: uint16_le
+              description: "ATT Rx MTU in bytes."
+
+      ll_dle:
+        uuid_suffix: "0x0018"
+        name: "LL DLE"
+        bytes: 2
+        permissions: ["READ"]
+        description: "LL Max Tx/Rx Bytes (27–251 bytes)."
+        firmware_versions:
+          - "PM5 V168.050 – V199.99"
+          - "PM5 V204.006 – V299.99"
+        data_format:
+          fields:
+            - name: ll_max_tx_rx_bytes
+              offset: 0
+              length: 2
+              type: uint16_le
+              description: "Link Layer Data Extension max Tx/Rx bytes."
+
+  # ---------------------------------------------------------------------------
+  # PM Control Service
+  # ---------------------------------------------------------------------------
+  pm_control:
+    uuid_suffix: "0x0020"
+    name: "C2 PM Control Service"
+    description: "CSAFE command send/receive channel."
+    # Cross-ref: c2bluetooth constants.dart — C2_ROWING_CONTROL_SERVICE_UUID (line 11)
+
+    characteristics:
+      receive:
+        uuid_suffix: "0x0021"
+        name: "C2 PM Receive Characteristic"
+        bytes: 20
+        bytes_note: "Up to 20 bytes"
+        permissions: ["WRITE"]
+        description: "Control command in the form of a CSAFE frame sent to PM."
+        data_format:
+          fields:
+            - name: csafe_frame
+              offset: 0
+              length: 20
+              type: bytes
+              description: "CSAFE command frame (variable length, up to 20 bytes)."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_PM_RECEIVE_CHARACTERISTIC_UUID (line 14)
+        # Cross-ref: pROWess main.py — PM5UUID['sendCSAFE'] (line 226)
+
+      transmit:
+        uuid_suffix: "0x0022"
+        name: "C2 PM Transmit Characteristic"
+        bytes: 20
+        bytes_note: "Up to 20 bytes"
+        permissions: ["READ"]
+        description: "Response to command in the form of a CSAFE frame from the PM."
+        data_format:
+          fields:
+            - name: csafe_frame
+              offset: 0
+              length: 20
+              type: bytes
+              description: "CSAFE response frame (variable length, up to 20 bytes)."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_PM_TRANSMIT_CHARACTERISTIC_UUID (line 17)
+        # Cross-ref: pROWess main.py — PM5UUID['getCSAFE'] (line 227)
+
+  # ---------------------------------------------------------------------------
+  # Rowing Service
+  # ---------------------------------------------------------------------------
+  rowing:
+    uuid_suffix: "0x0030"
+    name: "C2 Rowing Service"
+    description: "Real-time rowing data and workout status notifications."
+    # Cross-ref: c2bluetooth constants.dart — C2_ROWING_PRIMARY_SERVICE_UUID (line 19)
+
+    characteristics:
+      general_status:
+        uuid_suffix: "0x0031"
+        name: "C2 Rowing General Status"
+        bytes: 19
+        permissions: ["NOTIFY"]
+        description: >
+          General rowing status: elapsed time, distance, workout/interval/rowing/stroke
+          state, total work distance, duration, drag factor.
+        data_format:
+          # pROWess struct: '<HBHBBBBBBHBHBBB' (19 bytes)
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: distance_lo
+              offset: 3
+              length: 1
+              type: uint8
+              unit: "0.1 m"
+              description: "Distance low byte (0.1 m LSB)."
+            - name: distance_mid
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Distance mid byte."
+            - name: distance_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Distance high byte."
+            - name: workout_type
+              offset: 6
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_WORKOUTTYPE
+              description: "Workout Type enum (see Appendix)."
+            - name: interval_type
+              offset: 7
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_INTERVALTYPE
+              description: "Interval Type enum (see Appendix). Changes based on work/rest phase."
+            - name: workout_state
+              offset: 8
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_WORKOUTSTATE
+              description: "Workout State enum (see Appendix)."
+            - name: rowing_state
+              offset: 9
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_ROWINGSTATE
+              description: "Rowing State enum (see Appendix)."
+            - name: stroke_state
+              offset: 10
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_STROKESTATE
+              description: "Stroke State enum (see Appendix)."
+            - name: total_work_distance_lo
+              offset: 11
+              length: 1
+              type: uint8
+              unit: "0.1 m"
+              description: "Total work distance low byte."
+            - name: total_work_distance_mid
+              offset: 12
+              length: 1
+              type: uint8
+              description: "Total work distance mid byte."
+            - name: total_work_distance_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Total work distance high byte."
+            - name: workout_duration_lo
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Workout duration low byte."
+            - name: workout_duration_mid
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Workout duration mid byte."
+            - name: workout_duration_hi
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Workout duration high byte."
+            - name: workout_duration_type
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Duration type (time or distance)."
+            - name: drag_factor
+              offset: 18
+              length: 1
+              type: uint8
+              description: "Drag factor."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_GENERAL_STATUS_CHARACTERISTIC_UUID (line 22)
+        # Cross-ref: pROWess main.py — PM5UUID['RowStatus'] (line 228)
+        # Cross-ref: pROWess main.py — decodeRowingStatus() struct '<HBHBBBBBBHBHBBB' (line 167)
+
+      additional_status_1:
+        uuid_suffix: "0x0032"
+        name: "C2 Rowing Additional Status 1"
+        bytes: 17
+        permissions: ["NOTIFY"]
+        description: >
+          Additional rowing status: speed, stroke rate, heart rate, pace,
+          rest distance/time, erg machine type.
+        data_format:
+          # pROWess struct: '<HBHBBHHHBHB' (17 bytes)
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: speed_lo
+              offset: 3
+              length: 1
+              type: uint8
+              unit: "0.001 m/s"
+              csafe_cmd: CSAFE_GETSPEED_CMD
+              description: "Speed low byte (0.001 m/s LSB)."
+            - name: speed_hi
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Speed high byte."
+            - name: stroke_rate
+              offset: 5
+              length: 1
+              type: uint8
+              unit: "strokes/min"
+              csafe_cmd: CSAFE_PM_GET_STROKERATE
+              description: "Stroke rate in strokes per minute."
+            - name: heartrate
+              offset: 6
+              length: 1
+              type: uint8
+              unit: "bpm"
+              csafe_cmd: CSAFE_PM_GET_AVG_HEARTRATE
+              description: "Heart rate in bpm (255 = invalid)."
+            - name: current_pace_lo
+              offset: 7
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_STROKE_500MPACE
+              description: "Current pace low byte (0.01 sec LSB per 500m)."
+            - name: current_pace_hi
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Current pace high byte."
+            - name: average_pace_lo
+              offset: 9
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_500MPACE
+              description: "Average pace low byte (0.01 sec LSB per 500m)."
+            - name: average_pace_hi
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Average pace high byte."
+            - name: rest_distance_lo
+              offset: 11
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_RESTDISTANCE
+              description: "Rest distance low byte."
+            - name: rest_distance_hi
+              offset: 12
+              length: 1
+              type: uint8
+              description: "Rest distance high byte."
+            - name: rest_time_lo
+              offset: 13
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_RESTTIME
+              description: "Rest time low byte (0.01 sec LSB)."
+            - name: rest_time_mid
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Rest time mid byte."
+            - name: rest_time_hi
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Rest time high byte."
+            - name: erg_machine_type
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Erg Machine Type enum (see Appendix)."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_GENERAL_STATUS_CHARACTERISTIC2_UUID (line 25)
+        # Cross-ref: pROWess main.py — PM5UUID['RowStatus1'] (line 229)
+        # Cross-ref: pROWess main.py — decodeRowingStatus1() struct '<HBHBBHHHBHB' (line 187)
+        # Cross-ref: pROWess main.py — updateRowingStatus1() struct '<HBHBBHHHBHB' (line 206)
+
+      additional_status_2:
+        uuid_suffix: "0x0033"
+        name: "C2 Rowing Additional Status 2"
+        bytes: 20
+        permissions: ["NOTIFY"]
+        description: >
+          Interval/split averages: power, calories, pace, last split time/distance.
+        data_format:
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: interval_count
+              offset: 3
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_WORKOUTINTERVALCOUNT
+              description: "Workout interval count."
+            - name: average_power_lo
+              offset: 4
+              length: 1
+              type: uint8
+              unit: watts
+              csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_POWER
+              description: "Average power low byte."
+            - name: average_power_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Average power high byte."
+            - name: total_calories_lo
+              offset: 6
+              length: 1
+              type: uint8
+              unit: cals
+              csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_CALORIES
+              description: "Total calories low byte."
+            - name: total_calories_hi
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Total calories high byte."
+            - name: split_avg_pace_lo
+              offset: 8
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_500MPACE
+              description: "Split/interval avg pace low byte (0.01 sec LSB per 500m)."
+            - name: split_avg_pace_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Split/interval avg pace high byte."
+            - name: split_avg_power_lo
+              offset: 10
+              length: 1
+              type: uint8
+              unit: watts
+              csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_POWER
+              description: "Split/interval avg power low byte."
+            - name: split_avg_power_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Split/interval avg power high byte."
+            - name: split_avg_calories_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: "cals/hr"
+              csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_CALORIES
+              description: "Split/interval avg calories low byte (cals/hr)."
+            - name: split_avg_calories_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Split/interval avg calories high byte."
+            - name: last_split_time_lo
+              offset: 14
+              length: 1
+              type: uint8
+              unit: "0.1 s"
+              csafe_cmd: CSAFE_PM_GET_LAST_SPLITTIME
+              description: "Last split time low byte (0.1 sec LSB)."
+            - name: last_split_time_mid
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Last split time mid byte."
+            - name: last_split_time_hi
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Last split time high byte."
+            - name: last_split_distance_lo
+              offset: 17
+              length: 1
+              type: uint8
+              unit: meters
+              csafe_cmd: CSAFE_PM_GET_LAST_SPLITDISTANCE
+              description: "Last split distance low byte (meters)."
+            - name: last_split_distance_mid
+              offset: 18
+              length: 1
+              type: uint8
+              description: "Last split distance mid byte."
+            - name: last_split_distance_hi
+              offset: 19
+              length: 1
+              type: uint8
+              description: "Last split distance high byte."
+
+      sample_rate:
+        uuid_suffix: "0x0034"
+        name: "C2 Rowing General Status and Additional Status Sample Rate"
+        bytes: 1
+        permissions: ["WRITE", "READ"]
+        description: >
+          Controls notification rate for general status and additional status data.
+        data_format:
+          fields:
+            - name: rate
+              offset: 0
+              length: 1
+              type: uint8
+              description: >
+                0 = 1 sec, 1 = 500 ms (default if not explicitly set),
+                2 = 250 ms, 3 = 100 ms.
+
+      stroke_data:
+        uuid_suffix: "0x0035"
+        name: "C2 Rowing Stroke Data"
+        bytes: 20
+        permissions: ["NOTIFY"]
+        description: >
+          Per-stroke metrics: drive length/time, recovery time, stroke distance,
+          peak/average drive force, work per stroke, stroke count.
+        data_format:
+          # CSAFE_PM_GET_STROKESTATS returns equivalent values
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: distance_lo
+              offset: 3
+              length: 1
+              type: uint8
+              unit: "0.1 m"
+              description: "Distance low byte (0.1 m LSB)."
+            - name: distance_mid
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Distance mid byte."
+            - name: distance_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Distance high byte."
+            - name: drive_length
+              offset: 6
+              length: 1
+              type: uint8
+              unit: "0.01 m"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Drive length (0.01 meters, max 2.55 m)."
+            - name: drive_time
+              offset: 7
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Drive time (0.01 sec, max 2.55 sec)."
+            - name: stroke_recovery_time_lo
+              offset: 8
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Stroke recovery time low byte (0.01 sec, max 655.35 sec)."
+            - name: stroke_recovery_time_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Stroke recovery time high byte."
+            - name: stroke_distance_lo
+              offset: 10
+              length: 1
+              type: uint8
+              unit: "0.01 m"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Stroke distance low byte (0.01 m, max 655.35 m)."
+            - name: stroke_distance_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Stroke distance high byte."
+            - name: peak_drive_force_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: "0.1 lbs"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Peak drive force low byte (0.1 lbs, max 6553.5 lbs)."
+            - name: peak_drive_force_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Peak drive force high byte."
+            - name: average_drive_force_lo
+              offset: 14
+              length: 1
+              type: uint8
+              unit: "0.1 lbs"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Average drive force low byte (0.1 lbs, max 6553.5 lbs)."
+            - name: average_drive_force_hi
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Average drive force high byte."
+            - name: work_per_stroke_lo
+              offset: 16
+              length: 1
+              type: uint8
+              unit: "0.1 J"
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Work per stroke low byte (0.1 Joules, max 6553.5 J)."
+            - name: work_per_stroke_hi
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Work per stroke high byte."
+            - name: stroke_count_lo
+              offset: 18
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Stroke count low byte."
+            - name: stroke_count_hi
+              offset: 19
+              length: 1
+              type: uint8
+              description: "Stroke count high byte."
+
+      additional_stroke_data:
+        uuid_suffix: "0x0036"
+        name: "C2 Rowing Additional Stroke Data"
+        bytes: 15
+        permissions: ["NOTIFY"]
+        description: >
+          Additional per-stroke data: stroke power, calories, projected work time
+          and distance.
+        data_format:
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: stroke_power_lo
+              offset: 3
+              length: 1
+              type: uint8
+              unit: watts
+              csafe_cmd: CSAFE_PM_GET_STROKE_POWER
+              description: "Stroke power low byte."
+            - name: stroke_power_hi
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Stroke power high byte."
+            - name: stroke_calories_lo
+              offset: 5
+              length: 1
+              type: uint8
+              unit: "cal/hr"
+              csafe_cmd: CSAFE_PM_GET_STROKE_CALORICBURNRATE
+              description: "Stroke caloric burn rate low byte (cal/hr)."
+            - name: stroke_calories_hi
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Stroke caloric burn rate high byte."
+            - name: stroke_count_lo
+              offset: 7
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_PM_GET_STROKESTATS
+              description: "Stroke count low byte."
+            - name: stroke_count_hi
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Stroke count high byte."
+            - name: projected_work_time_lo
+              offset: 9
+              length: 1
+              type: uint8
+              unit: seconds
+              description: "Projected work time low byte (seconds)."
+            - name: projected_work_time_mid
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Projected work time mid byte."
+            - name: projected_work_time_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Projected work time high byte."
+            - name: projected_work_distance_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: meters
+              description: "Projected work distance low byte (meters)."
+            - name: projected_work_distance_mid
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Projected work distance mid byte."
+            - name: projected_work_distance_hi
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Projected work distance high byte."
+
+      split_interval_data:
+        uuid_suffix: "0x0037"
+        name: "C2 Rowing Split/Interval Data"
+        bytes: 18
+        permissions: ["NOTIFY"]
+        description: >
+          Split/interval boundaries: time, distance, rest time/distance,
+          type, and interval number.
+        data_format:
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: distance_lo
+              offset: 3
+              length: 1
+              type: uint8
+              unit: "0.1 m"
+              description: "Distance low byte (0.1 m LSB)."
+            - name: distance_mid
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Distance mid byte."
+            - name: distance_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Distance high byte."
+            - name: split_interval_time_lo
+              offset: 6
+              length: 1
+              type: uint8
+              unit: "0.1 s"
+              description: "Split/interval time low byte (0.1 sec LSB)."
+            - name: split_interval_time_mid
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Split/interval time mid byte."
+            - name: split_interval_time_hi
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Split/interval time high byte."
+            - name: split_interval_distance_lo
+              offset: 9
+              length: 1
+              type: uint8
+              unit: "1 m"
+              description: "Split/interval distance low byte (1 m LSB)."
+            - name: split_interval_distance_mid
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Split/interval distance mid byte."
+            - name: split_interval_distance_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Split/interval distance high byte."
+            - name: interval_rest_time_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: "1 s"
+              description: "Interval rest time low byte (1 sec LSB)."
+            - name: interval_rest_time_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Interval rest time high byte."
+            - name: interval_rest_distance_lo
+              offset: 14
+              length: 1
+              type: uint8
+              unit: "1 m"
+              description: "Interval rest distance low byte (1 m LSB)."
+            - name: interval_rest_distance_hi
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Interval rest distance high byte."
+            - name: split_interval_type
+              offset: 16
+              length: 1
+              type: uint8
+              description: >
+                Split/interval type. Changes based on work/rest phase.
+                Use workout_type to determine time vs distance intervals.
+            - name: split_interval_number
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Split/interval number."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_SPLIT_INTERVAL_DATA_CHARACTERISTIC_UUID (line 28)
+
+      additional_split_interval_data:
+        uuid_suffix: "0x0038"
+        name: "C2 Rowing Additional Split/Interval Data"
+        bytes: 19
+        permissions: ["NOTIFY"]
+        description: >
+          Split/interval averages: stroke rate, heart rate, pace, calories,
+          speed, power, drag factor.
+        data_format:
+          fields:
+            - name: elapsed_time_lo
+              offset: 0
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: split_interval_avg_stroke_rate
+              offset: 3
+              length: 1
+              type: uint8
+              unit: "strokes/min"
+              description: "Split/interval average stroke rate."
+            - name: split_interval_work_heartrate
+              offset: 4
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Split/interval work heart rate."
+            - name: split_interval_rest_heartrate
+              offset: 5
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Split/interval rest heart rate."
+            - name: split_interval_avg_pace_lo
+              offset: 6
+              length: 1
+              type: uint8
+              unit: "0.1 s"
+              description: "Split/interval avg pace low byte (0.1 sec LSB per 500m)."
+            - name: split_interval_avg_pace_hi
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Split/interval avg pace high byte."
+            - name: split_interval_total_calories_lo
+              offset: 8
+              length: 1
+              type: uint8
+              unit: cals
+              description: "Split/interval total calories low byte."
+            - name: split_interval_total_calories_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Split/interval total calories high byte."
+            - name: split_interval_avg_calories_lo
+              offset: 10
+              length: 1
+              type: uint8
+              unit: "cals/hr"
+              description: "Split/interval avg calories low byte (cals/hr)."
+            - name: split_interval_avg_calories_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Split/interval avg calories high byte."
+            - name: split_interval_speed_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: "0.001 m/s"
+              description: "Split/interval speed low byte (0.001 m/s, max 65.534 m/s)."
+            - name: split_interval_speed_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Split/interval speed high byte."
+            - name: split_interval_power_lo
+              offset: 14
+              length: 1
+              type: uint8
+              unit: watts
+              description: "Split/interval power low byte (watts, max 65534 W)."
+            - name: split_interval_power_hi
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Split/interval power high byte."
+            - name: split_avg_drag_factor
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Split average drag factor."
+            - name: split_interval_number
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Split/interval number."
+            - name: erg_machine_type
+              offset: 18
+              length: 1
+              type: uint8
+              description: >
+                Erg Machine Type enum (see Appendix). For MultiErg workouts,
+                this is the machine type of the current interval.
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_SPLIT_INTERVAL_DATA_CHARACTERISTIC2_UUID (line 31)
+
+      end_of_workout_summary:
+        uuid_suffix: "0x0039"
+        name: "C2 Rowing End of Workout Summary Data"
+        bytes: 20
+        permissions: ["NOTIFY"]
+        description: >
+          Workout summary sent at end of workout. Recovery heart rate is sent
+          as a revision after 1 minute of rest (zero until then).
+        data_format:
+          fields:
+            - name: log_entry_date_lo
+              offset: 0
+              length: 1
+              type: uint8
+              description: "Log entry date low byte."
+            - name: log_entry_date_hi
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Log entry date high byte."
+            - name: log_entry_time_lo
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Log entry time low byte."
+            - name: log_entry_time_hi
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Log entry time high byte."
+            - name: elapsed_time_lo
+              offset: 4
+              length: 1
+              type: uint8
+              unit: "0.01 s"
+              description: "Elapsed time low byte (0.01 sec LSB)."
+            - name: elapsed_time_mid
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Elapsed time mid byte."
+            - name: elapsed_time_hi
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Elapsed time high byte."
+            - name: distance_lo
+              offset: 7
+              length: 1
+              type: uint8
+              unit: "0.1 m"
+              description: "Distance low byte (0.1 m LSB)."
+            - name: distance_mid
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Distance mid byte."
+            - name: distance_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Distance high byte."
+            - name: avg_stroke_rate
+              offset: 10
+              length: 1
+              type: uint8
+              unit: "strokes/min"
+              description: "Average stroke rate."
+            - name: ending_heartrate
+              offset: 11
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Ending heart rate."
+            - name: avg_heartrate
+              offset: 12
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Average heart rate."
+            - name: min_heartrate
+              offset: 13
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Minimum heart rate."
+            - name: max_heartrate
+              offset: 14
+              length: 1
+              type: uint8
+              unit: bpm
+              description: "Maximum heart rate."
+            - name: avg_drag_factor
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Average drag factor."
+            - name: recovery_heartrate
+              offset: 16
+              length: 1
+              type: uint8
+              unit: bpm
+              description: >
+                Recovery heart rate. Zero until valid. After 1 minute of rest,
+                PM5 resends this characteristic with the recovery HR value
+                (unless monitor is off or new workout started).
+            - name: workout_type
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Workout Type enum (see Appendix)."
+            - name: avg_pace_lo
+              offset: 18
+              length: 1
+              type: uint8
+              unit: "0.1 s"
+              description: "Average pace low byte (0.1 sec LSB per 500m)."
+            - name: avg_pace_hi
+              offset: 19
+              length: 1
+              type: uint8
+              description: "Average pace high byte."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_END_OF_WORKOUT_SUMMARY_CHARACTERISTIC_UUID (line 34)
+
+      end_of_workout_additional_summary:
+        uuid_suffix: "0x003A"
+        name: "C2 Rowing End of Workout Additional Summary Data"
+        bytes: 19
+        permissions: ["NOTIFY"]
+        description: >
+          Additional end-of-workout summary: split/interval config, calories,
+          watts, rest distance/time.
+        data_format:
+          fields:
+            - name: log_entry_date_lo
+              offset: 0
+              length: 1
+              type: uint8
+              description: "Log entry date low byte."
+            - name: log_entry_date_hi
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Log entry date high byte."
+            - name: log_entry_time_lo
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Log entry time low byte."
+            - name: log_entry_time_hi
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Log entry time high byte."
+            - name: split_interval_type
+              offset: 4
+              length: 1
+              type: uint8
+              description: >
+                Split/interval type. Changes based on phase at workout end.
+                Use workout_type to determine time vs distance intervals.
+            - name: split_interval_size_lo
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Split/interval size low byte (meters or seconds)."
+            - name: split_interval_size_hi
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Split/interval size high byte."
+            - name: split_interval_count
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Split/interval count."
+            - name: total_calories_lo
+              offset: 8
+              length: 1
+              type: uint8
+              unit: cals
+              description: "Total calories low byte."
+            - name: total_calories_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Total calories high byte."
+            - name: watts_lo
+              offset: 10
+              length: 1
+              type: uint8
+              unit: watts
+              description: "Watts low byte."
+            - name: watts_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Watts high byte."
+            - name: total_rest_distance_lo
+              offset: 12
+              length: 1
+              type: uint8
+              unit: "1 m"
+              description: "Total rest distance low byte (1 m LSB)."
+            - name: total_rest_distance_mid
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Total rest distance mid byte."
+            - name: total_rest_distance_hi
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Total rest distance high byte."
+            - name: interval_rest_time_lo
+              offset: 15
+              length: 1
+              type: uint8
+              unit: seconds
+              description: "Interval rest time low byte (seconds)."
+            - name: interval_rest_time_hi
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Interval rest time high byte."
+            - name: avg_calories_lo
+              offset: 17
+              length: 1
+              type: uint8
+              unit: "cals/hr"
+              description: "Average calories low byte (cals/hr)."
+            - name: avg_calories_hi
+              offset: 18
+              length: 1
+              type: uint8
+              description: "Average calories high byte."
+        # Cross-ref: c2bluetooth constants.dart — C2_ROWING_END_OF_WORKOUT_SUMMARY_CHARACTERISTIC2_UUID (line 37)
+
+      heart_rate_belt_information:
+        uuid_suffix: "0x003B"
+        name: "C2 Rowing Heart Rate Belt Information"
+        bytes: 6
+        permissions: ["NOTIFY"]
+        description: >
+          Heart rate belt identity. Sent whenever it changes. Supports Polar H7
+          and similar Bluetooth Smart HR belts.
+        data_format:
+          fields:
+            - name: manufacturer_id
+              offset: 0
+              length: 1
+              type: uint8
+              description: "Belt manufacturer ID."
+            - name: device_type
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Belt device type."
+            - name: belt_id_lo
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Belt ID low byte."
+            - name: belt_id_mid_lo
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Belt ID mid-low byte."
+            - name: belt_id_mid_hi
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Belt ID mid-high byte."
+            - name: belt_id_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Belt ID high byte."
+
+      end_of_workout_additional_summary_2:
+        uuid_suffix: "0x003C"
+        name: "C2 Rowing End of Workout Additional Summary Data 2"
+        bytes: 10
+        permissions: ["NOTIFY"]
+        description: >
+          Second additional end-of-workout summary: pace, game data, erg type.
+          Defined in the multiplexed data definitions (Table 15). Available as
+          both a standalone characteristic and via the multiplexed channel.
+        data_format:
+          fields:
+            - name: log_entry_date_lo
+              offset: 0
+              length: 1
+              type: uint8
+              description: "Log entry date low byte."
+            - name: log_entry_date_hi
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Log entry date high byte."
+            - name: log_entry_time_lo
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Log entry time low byte."
+            - name: log_entry_time_hi
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Log entry time high byte."
+            - name: avg_pace_lo
+              offset: 4
+              length: 1
+              type: uint8
+              unit: "0.1 s"
+              description: "Average pace low byte (0.1 sec LSB per 500m)."
+            - name: avg_pace_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Average pace high byte."
+            - name: game_identifier
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Game identifier / Workout Verified flag (see Appendix)."
+            - name: game_score_lo
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Game score low byte (Fish/Darts: 1 pt LSB; Target: 0.1% LSB)."
+            - name: game_score_hi
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Game score high byte."
+            - name: erg_machine_type
+              offset: 9
+              length: 1
+              type: uint8
+              description: >
+                Erg Machine Type enum (see Appendix). For MultiErg workouts,
+                may differ from connected machine.
+
+      force_curve_data:
+        uuid_suffix: "0x003D"
+        name: "C2 Force Curve Data"
+        bytes: 288
+        bytes_note: "2–288 bytes, split across multiple successive notifications"
+        permissions: ["NOTIFY"]
+        description: >
+          Force curve data points sent as multiple successive notifications.
+          Each notification carries a header byte and up to 9 pairs of 16-bit
+          data points. PM5v1 does not support this feature.
+        data_format:
+          fields:
+            - name: header
+              offset: 0
+              length: 1
+              type: uint8
+              description: >
+                MS nibble = total number of characteristics (notifications)
+                for this force curve. LS nibble = number of 16-bit data points
+                in the current characteristic.
+            - name: sequence_number
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Sequence number for ordering the notifications."
+            - name: data_points
+              offset: 2
+              length: 18
+              type: "int16_le[]"
+              description: >
+                Up to 9 pairs of (LS, MS) bytes representing 16-bit force
+                curve data points. Actual count given by header LS nibble.
+
+      additional_status_3:
+        uuid_suffix: "0x003E"
+        name: "C2 Rowing Additional Status 3"
+        bytes: 12
+        permissions: ["NOTIFY"]
+        description: >
+          Operational state, errors, calibration (BikeErg), game data.
+        firmware_versions:
+          - "PM5 V172 – V199.99"
+          - "PM5 V211 – V249.99"
+          - "PM5 V253 – V299.99"
+          - "PM5 V872 – V899.99"
+          - "PM5 V911 – V949.99"
+          - "PM5 V953 – V999.99"
+          - "PM5 V330 – V349.99"
+          - "PM5 V363 – V399.99"
+          - "PM5 V403 – V449.99"
+        data_format:
+          fields:
+            - name: operational_state
+              offset: 0
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_GET_OPERATIONALSTATE
+              description: "Operational state."
+            - name: workout_verification_state
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Workout verification state."
+            - name: screen_number_lo
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Screen number low byte."
+            - name: screen_number_hi
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Screen number high byte."
+            - name: last_error_lo
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Last error code low byte."
+            - name: last_error_hi
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Last error code high byte."
+            - name: calibration_mode
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Calibration mode (BikeErg only; 0 otherwise)."
+            - name: calibration_state
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Calibration state (BikeErg only; 0 otherwise)."
+            - name: calibration_status
+              offset: 8
+              length: 1
+              type: uint8
+              description: "Calibration status (BikeErg only; 0 otherwise)."
+            - name: game_id
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Game ID."
+            - name: game_score_lo
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Game score low byte (Fish/Darts: 1 pt LSB; Target: 0.1% LSB)."
+            - name: game_score_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Game score high byte."
+
+      logged_workout:
+        uuid_suffix: "0x003F"
+        name: "C2 Rowing Logged Workout"
+        bytes: 15
+        permissions: ["NOTIFY"]
+        description: >
+          Logged workout hash, internal log address, size, and erg model.
+        firmware_versions:
+          - "PM5 V172 – V199.99"
+          - "PM5 V211 – V249.99"
+          - "PM5 V253 – V299.99"
+          - "PM5 V872 – V899.99"
+          - "PM5 V911 – V949.99"
+          - "PM5 V953 – V999.99"
+          - "PM5 V330 – V349.99"
+          - "PM5 V363 – V399.99"
+          - "PM5 V403 – V449.99"
+        data_format:
+          fields:
+            - name: workout_hash_0
+              offset: 0
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_GET_CURRENT_WORKOUT_HASH
+              description: "Logged workout hash byte 0 (LSB)."
+            - name: workout_hash_1
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 1."
+            - name: workout_hash_2
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 2."
+            - name: workout_hash_3
+              offset: 3
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 3."
+            - name: workout_hash_4
+              offset: 4
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 4."
+            - name: workout_hash_5
+              offset: 5
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 5."
+            - name: workout_hash_6
+              offset: 6
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 6."
+            - name: workout_hash_7
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Logged workout hash byte 7 (MSB)."
+            - name: internal_log_address_lo
+              offset: 8
+              length: 1
+              type: uint8
+              csafe_cmd: CSAFE_GET_INTERNALLOGPARAMS
+              description: "Internal log address low byte."
+            - name: internal_log_address_mid_lo
+              offset: 9
+              length: 1
+              type: uint8
+              description: "Internal log address mid-low byte."
+            - name: internal_log_address_mid_hi
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Internal log address mid-high byte."
+            - name: internal_log_address_hi
+              offset: 11
+              length: 1
+              type: uint8
+              description: "Internal log address high byte."
+            - name: logged_workout_size_lo
+              offset: 12
+              length: 1
+              type: uint8
+              description: "Logged workout size low byte."
+            - name: logged_workout_size_hi
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Logged workout size high byte."
+            - name: erg_model_type
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Erg model type."
+
+  # ---------------------------------------------------------------------------
+  # Multiplexed Information (aggregated notification channel)
+  # ---------------------------------------------------------------------------
+  multiplexed_information:
+    uuid_suffix: "0x0080"
+    name: "C2 Multiplexed Information"
+    description: >
+      Aggregated notification channel. The first byte identifies the payload
+      matching one of the rowing characteristic IDs below. An ID is multiplexed
+      here ONLY when its dedicated characteristic notification is NOT enabled.
+      Total packet length is payload_length + 1 (for the identifier byte).
+    characteristics:
+      multiplexed_data:
+        uuid_suffix: "0x0080"
+        name: "C2 Multiplexed Information Characteristic"
+        bytes: 20
+        bytes_note: "Up to 20 bytes (1 identifier byte + up to 19 data bytes)"
+        permissions: ["NOTIFY"]
+        description: >
+          Multiplexed data carrying any of the rowing characteristic payloads
+          prefixed with an identification byte. See individual rowing
+          characteristics for field definitions.
+        multiplexed_ids:
+          - "0x31"   # general_status (19 bytes)
+          - "0x32"   # additional_status_1 (17 bytes)
+          - "0x33"   # additional_status_2 (20 bytes)
+          - "0x35"   # stroke_data (20 bytes)
+          - "0x36"   # additional_stroke_data (15 bytes)
+          - "0x37"   # split_interval_data (18 bytes)
+          - "0x38"   # additional_split_interval_data (19 bytes)
+          - "0x39"   # end_of_workout_summary (20 bytes)
+          - "0x3A"   # end_of_workout_additional_summary (19 bytes)
+          - "0x3B"   # heart_rate_belt_information (6 bytes)
+          - "0x3C"   # end_of_workout_additional_summary_2 (10 bytes)
+          - "0x3D"   # force_curve_data (variable)
+          - "0x3E"   # additional_status_3 (12 bytes)
+          - "0x3F"   # logged_workout (15 bytes)
+
+  # ---------------------------------------------------------------------------
+  # Heart Rate Service
+  # ---------------------------------------------------------------------------
+  heart_rate:
+    uuid_suffix: "0x0040"
+    name: "C2 PM Heart Rate Service"
+    description: >
+      Heart rate belt data relay. Allows apps to send HR belt information
+      to the PM for display and recording.
+    characteristics:
+      receive:
+        uuid_suffix: "0x0041"
+        name: "C2 PM Heart Rate Receive Characteristic"
+        bytes: 20
+        permissions: ["WRITE"]
+        description: >
+          Heart rate data sent to PM. Supports both Bluetooth Smart and
+          ANT+ HR belts. Spare bytes reserved for future use.
+        firmware_versions:
+          - "PM5 V172 – V199.99"
+          - "PM5 V211 – V249.99"
+          - "PM5 V253 – V299.99"
+          - "PM5 V872 – V899.99"
+          - "PM5 V911 – V949.99"
+          - "PM5 V953 – V999.99"
+          - "PM5 V330 – V349.99"
+          - "PM5 V363 – V399.99"
+          - "PM5 V403 – V449.99"
+        data_format:
+          fields:
+            - name: type
+              offset: 0
+              length: 1
+              type: uint8
+              description: "HR source type: 0 = Bluetooth, 1 = ANT+."
+            - name: energy_expended_lo
+              offset: 1
+              length: 1
+              type: uint8
+              description: "Energy expended low byte (BT HRM value)."
+            - name: energy_expended_hi
+              offset: 2
+              length: 1
+              type: uint8
+              description: "Energy expended high byte (BT HRM value)."
+            - name: rr_interval_lo
+              offset: 3
+              length: 1
+              type: uint8
+              description: "RR interval low byte (BT HRM value)."
+            - name: rr_interval_hi
+              offset: 4
+              length: 1
+              type: uint8
+              description: "RR interval high byte (BT HRM value)."
+            - name: hr_value_lo
+              offset: 5
+              length: 1
+              type: uint8
+              description: "HR value low byte (BT HRM value)."
+            - name: hr_value_hi
+              offset: 6
+              length: 1
+              type: uint8
+              description: "HR value high byte (BT HRM value)."
+            - name: status_flags
+              offset: 7
+              length: 1
+              type: uint8
+              description: "Status flags (BT HRM value)."
+            - name: hr_measurement_lo
+              offset: 8
+              length: 1
+              type: uint8
+              description: "HR measurement low byte (ANT HRM value)."
+            - name: hr_measurement_hi
+              offset: 9
+              length: 1
+              type: uint8
+              description: "HR measurement high byte (ANT HRM value)."
+            - name: heart_beat_count
+              offset: 10
+              length: 1
+              type: uint8
+              description: "Heart beat count (ANT HRM value)."
+            - name: hr
+              offset: 11
+              length: 1
+              type: uint8
+              description: "HR (ANT HRM value)."
+            - name: spare_0
+              offset: 12
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_1
+              offset: 13
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_2
+              offset: 14
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_3
+              offset: 15
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_4
+              offset: 16
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_5
+              offset: 17
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_6
+              offset: 18
+              length: 1
+              type: uint8
+              description: "Reserved."
+            - name: spare_7
+              offset: 19
+              length: 1
+              type: uint8
+              description: "Reserved."

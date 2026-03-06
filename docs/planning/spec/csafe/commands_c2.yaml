@@ -1,0 +1,1553 @@
+# Concept2 Proprietary CSAFE Commands
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: Command List — Proprietary CSAFE Commands (pp57-75)
+#
+# Cross-reference files:
+#   - docs/planning/spec/csafe/protocol.yaml — frame format, command structure
+#   - docs/planning/spec/csafe/enums.yaml — enumerated types referenced by commands
+#   - docs/planning/spec/csafe/ble_services.yaml — BLE GATT transport layer
+#   - docs/planning/spec/csafe/commands_public.yaml — public commands that interact
+#
+# All proprietary commands are issued inside one of the wrapper commands listed
+# below.  The wrapper carries a list of proprietary sub-commands encoded with
+# standard CSAFE long-command structure (command byte + byte count + data).
+#
+# Special considerations (pp56-57):
+#   - ScreenType commands are posted asynchronously to the UI task; poll
+#     CSAFE_PM_GET_SCREENSTATESTATUS for completion (PENDING → INPROGRESS →
+#     INACTIVE).
+#   - Maximum block size commands (DISPLAYBITMAP, LOGCARDMEMORY): 64 bytes max.
+#   - Fixed response size commands (MEMORY, LOGCARDMEMORY, INTERNALLOGMEMORY):
+#     always return 65 bytes; first byte is valid count.
+#   - FORCEPLOTDATA and HEARTBEATDATA: 32-byte (16-word) max block; returns 33
+#     bytes with first byte indicating valid byte count.
+
+# ===========================================================================
+#  Wrapper Commands
+# ===========================================================================
+# These are the public-facing command IDs that encapsulate proprietary
+# sub-commands within a standard CSAFE frame.  Each wrapper targets a
+# specific category of proprietary commands.
+wrappers:
+  CSAFE_SETUSERCFG1_CMD:
+    id: 0x1A
+    type: long
+    access: "public_limited"
+    direction: set
+    description: >
+      Limited proprietary access through the public command interface.
+      Only certain long_set_config commands are permitted (e.g.,
+      PM_SET_SPLITDURATION).  Used by pROWess programPhase().
+    categories: ["long_set_config"]
+    cross_ref:
+      - "pROWess/py/main.py:300 — 0x1A wraps PM_SET_SPLITDURATION"
+
+  CSAFE_SETPMCFG_CMD:
+    id: 0x76
+    type: long
+    access: "proprietary"
+    direction: set
+    description: >
+      Full proprietary set-configuration wrapper.  Carries one or more
+      long_set_config sub-commands.
+    categories: ["long_set_config"]
+    cross_ref:
+      - "c2bluetooth commands.dart — C2ProprietaryWrapper uses 0x76"
+
+  CSAFE_SETPMDATA_CMD:
+    id: 0x77
+    type: long
+    access: "proprietary"
+    direction: set
+    description: >
+      Full proprietary set-data wrapper.  Carries long_set_data sub-commands.
+    categories: ["long_set_data"]
+
+  CSAFE_GETPMCFG_CMD:
+    id: 0x7E
+    type: long
+    access: "proprietary"
+    direction: get
+    description: >
+      Full proprietary get-configuration wrapper.  Carries short_get_config
+      and long_get_config sub-commands.
+    categories: ["short_get_config", "long_get_config"]
+
+  CSAFE_GETPMDATA_CMD:
+    id: 0x7F
+    type: long
+    access: "proprietary"
+    direction: get
+    description: >
+      Full proprietary get-data wrapper.  Carries short_get_data and
+      long_get_data sub-commands.
+    categories: ["short_get_data", "long_get_data"]
+
+# ===========================================================================
+#  Proprietary Commands — organised by category
+# ===========================================================================
+commands:
+
+  # =========================================================================
+  #  SHORT GET CONFIGURATION (0x80–0x9F, 0xE8–0xEF)
+  #  Wrapper: CSAFE_GETPMCFG_CMD (0x7E)
+  #  These are short commands (no request data).
+  # =========================================================================
+  short_get_config:
+    description: "Short proprietary get configuration commands"
+    wrapper: "CSAFE_GETPMCFG_CMD"
+    spec_page: "57-59"
+    commands:
+
+      PM_GET_FW_VERSION:
+        id: 0x80
+        description: "Firmware executable version number"
+        response:
+          - { name: "fw_version", bytes: 16, type: "bytes", description: "FW Exe Version # (MSB first, 16 bytes)" }
+
+      PM_GET_HW_VERSION:
+        id: 0x81
+        description: "Hardware version number"
+        response:
+          - { name: "hw_version", bytes: 16, type: "bytes", description: "HW Version # (MSB first, 16 bytes)" }
+
+      PM_GET_HW_ADDRESS:
+        id: 0x82
+        description: "Hardware address (unit serial number from MFG EEPROM)"
+        response:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first)" }
+
+      PM_GET_TICK_TIMEBASE:
+        id: 0x83
+        description: "Tick timebase as IEEE 754 float"
+        response:
+          - { name: "tick_timebase", bytes: 4, type: "float32_be", description: "Tick timebase (float, MSB first)" }
+
+      PM_GET_HRM:
+        id: 0x84
+        description: "Heart rate monitor channel status and device info"
+        response:
+          - { name: "channel_status", bytes: 1, type: "uint8", description: "0=Inactive, 1=Discovery, 2=Paired" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "Device Manufacture ID (if paired, else 0)" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "Device Type (if paired, else 0)" }
+          - { name: "device_num", bytes: 2, type: "uint16_be", description: "Device Num (if paired, else 0)" }
+
+      PM_GET_DATETIME:
+        id: 0x85
+        description: "Current date and time on the PM"
+        response:
+          - { name: "hours", bytes: 1, type: "uint8", description: "Time Hours (1-12)" }
+          - { name: "minutes", bytes: 1, type: "uint8", description: "Time Minutes (0-59)" }
+          - { name: "meridiem", bytes: 1, type: "uint8", description: "Time Meridiem (0=AM, 1=PM)" }
+          - { name: "month", bytes: 1, type: "uint8", description: "Date Month (1-12)" }
+          - { name: "day", bytes: 1, type: "uint8", description: "Date Day (1-31)" }
+          - { name: "year", bytes: 2, type: "uint16_be", description: "Date Year (MSB first)" }
+
+      PM_GET_SCREENSTATESTATUS:
+        id: 0x86
+        description: >
+          Screen state status — used to poll for completion of ScreenType
+          commands (PENDING → INPROGRESS → INACTIVE).
+        response:
+          - { name: "screen_type", bytes: 1, type: "uint8", description: "Screen type" }
+          - { name: "screen_value", bytes: 1, type: "uint8", description: "Screen value" }
+          - { name: "screen_status", bytes: 1, type: "uint8", description: "Screen status (see enums)" }
+
+      PM_GET_RACE_LANE_REQUEST:
+        id: 0x87
+        description: "Erg physical address for race lane request"
+        response:
+          - { name: "erg_physical_address", bytes: 1, type: "uint8", description: "Erg Physical Address" }
+
+      PM_GET_RACE_ENTRY_REQUEST:
+        id: 0x88
+        description: "Erg logical address for race entry request"
+        response:
+          - { name: "erg_logical_address", bytes: 1, type: "uint8", description: "Erg Logical Address" }
+
+      PM_GET_WORKOUTTYPE:
+        id: 0x89
+        description: "Current workout type"
+        response:
+          - { name: "workout_type", bytes: 1, type: "uint8", description: "Workout type (see enums.yaml OBJ_WORKOUTTYPE_T)" }
+
+      PM_GET_DISPLAYTYPE:
+        id: 0x8A
+        description: "Current display type"
+        response:
+          - { name: "display_type", bytes: 1, type: "uint8", description: "Display type" }
+
+      PM_GET_DISPLAYUNITS:
+        id: 0x8B
+        description: "Current display units"
+        response:
+          - { name: "display_units", bytes: 1, type: "uint8", description: "Display units" }
+
+      PM_GET_LANGUAGETYPE:
+        id: 0x8C
+        description: "Current language type"
+        response:
+          - { name: "language_type", bytes: 1, type: "uint8", description: "Language type" }
+
+      PM_GET_WORKOUTSTATE:
+        id: 0x8D
+        description: "Current workout state"
+        response:
+          - { name: "workout_state", bytes: 1, type: "uint8", description: "Workout state (see enums.yaml)" }
+
+      PM_GET_INTERVALTYPE:
+        id: 0x8E
+        description: "Current interval type — changes depending on work/rest phase"
+        response:
+          - { name: "interval_type", bytes: 1, type: "uint8", description: "Interval type (see enums.yaml)" }
+
+      PM_GET_OPERATIONALSTATE:
+        id: 0x8F
+        description: "Current operational state of the PM"
+        response:
+          - { name: "operational_state", bytes: 1, type: "uint8", description: "Operational state" }
+
+      PM_GET_LOGCARDSTATE:
+        id: 0x90
+        description: "Log card state"
+        response:
+          - { name: "logcard_state", bytes: 1, type: "uint8", description: "Log card state" }
+
+      PM_GET_LOGCARDSTATUS:
+        id: 0x91
+        description: "Log card status"
+        response:
+          - { name: "logcard_status", bytes: 1, type: "uint8", description: "Log card status" }
+
+      PM_GET_POWERUPSTATE:
+        id: 0x92
+        description: "Power-up state"
+        response:
+          - { name: "powerup_state", bytes: 1, type: "uint8", description: "Power-up state" }
+
+      PM_GET_ROWINGSTATE:
+        id: 0x93
+        description: "Current rowing state"
+        response:
+          - { name: "rowing_state", bytes: 1, type: "uint8", description: "Rowing state (see enums.yaml)" }
+
+      PM_GET_SCREENCONTENT_VERSION:
+        id: 0x94
+        description: "Screen content version number"
+        response:
+          - { name: "screen_content_version", bytes: 16, type: "bytes", description: "Screen Content Version # (MSB first, 16 bytes)" }
+
+      PM_GET_COMMUNICATIONSTATE:
+        id: 0x95
+        description: "Communication state"
+        response:
+          - { name: "communication_state", bytes: 1, type: "uint8", description: "Communication state" }
+
+      PM_GET_RACEPARTICIPANTCOUNT:
+        id: 0x96
+        description: "Number of race participants"
+        response:
+          - { name: "participant_count", bytes: 1, type: "uint8", description: "Race Participant Count" }
+
+      PM_GET_BATTERYLEVELPERCENT:
+        id: 0x97
+        description: "Battery level as percentage"
+        response:
+          - { name: "battery_percent", bytes: 1, type: "uint8", description: "Battery Level Percent" }
+
+      PM_GET_RACEMODESTATUS:
+        id: 0x98
+        description: "Race mode status including HW address, state, and diagnostics"
+        response:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first)" }
+          - { name: "race_operation_type", bytes: 1, type: "uint8", description: "Race Operation Type" }
+          - { name: "race_state", bytes: 1, type: "uint8", description: "Race State" }
+          - { name: "race_start_state", bytes: 1, type: "uint8", description: "Race Start State" }
+          - { name: "rowing_state", bytes: 1, type: "uint8", description: "Rowing State" }
+          - { name: "epm_status", bytes: 1, type: "uint8", description: "EPM Status" }
+          - { name: "battery_percent", bytes: 1, type: "uint8", description: "Battery Level Percent" }
+          - { name: "pm5_tach_wire_test", bytes: 1, type: "uint8", description: "PM5: Tach wire test status (PM3/4: Avg Flywheel RPM MSB)" }
+          - { name: "pm5_tach_simulator", bytes: 1, type: "uint8", description: "PM5: Tach Simulator status (PM3/4: Avg Flywheel RPM LSB)" }
+          - { name: "workout_state", bytes: 1, type: "uint8", description: "Workout State" }
+          - { name: "workout_type", bytes: 1, type: "uint8", description: "Workout Type" }
+          - { name: "operational_state", bytes: 1, type: "uint8", description: "Operational State" }
+
+      PM_GET_INTERNALLOGPARAMS:
+        id: 0x99
+        description: "Internal log parameters (start address and last entry length)"
+        response:
+          - { name: "log_start_address", bytes: 4, type: "uint32_be", description: "Log Start Address (MSB first)" }
+          - { name: "last_entry_length", bytes: 2, type: "uint16_be", description: "Last Log Entry Length (MSB first)" }
+
+      PM_GET_PRODUCTCONFIGURATION:
+        id: 0x9A
+        description: "Product configuration (base HW/SW revision, build, LCD info)"
+        response:
+          - { name: "base_hw_revision", bytes: 2, type: "uint16_be", description: "PM Base HW Revision" }
+          - { name: "base_sw_revision", bytes: 2, type: "uint16_be", description: "PM Base SW Revision" }
+          - { name: "sw_build_number", bytes: 1, type: "uint8", description: "SW Build Number" }
+          - { name: "lcd_mfg_id", bytes: 1, type: "uint8", description: "LCD Mfg ID" }
+          - { name: "unused", bytes: 4, type: "bytes", description: "Unused (0)" }
+
+      PM_GET_ERGSLAVEDISCOVERYREQUESTSTATUS:
+        id: 0x9B
+        description: "Erg slave discovery request status"
+        response:
+          - { name: "status", bytes: 1, type: "uint8", description: "Status" }
+          - { name: "slave_count", bytes: 1, type: "uint8", description: "# of Erg slaves present" }
+
+      PM_GET_WIFICONFIG:
+        id: 0x9C
+        description: "WiFi configuration"
+        response:
+          - { name: "config_index", bytes: 1, type: "uint8", description: "Configuration Index" }
+          - { name: "wep_mode", bytes: 1, type: "uint8", description: "WEP Mode" }
+
+      PM_GET_CPUTICKRATE:
+        id: 0x9D
+        description: "CPU/Tick rate enumeration"
+        response:
+          - { name: "cpu_tick_rate", bytes: 1, type: "uint8", description: "CPU/Tick Rate Enumeration" }
+
+      PM_GET_LOGCARDUSERCENSUS:
+        id: 0x9E
+        description: "Log card user census"
+        response:
+          - { name: "user_count", bytes: 1, type: "uint8", description: "Number Users on Card" }
+          - { name: "current_user", bytes: 1, type: "uint8", description: "Number of Current User" }
+
+      PM_GET_WORKOUTINTERVALCOUNT:
+        id: 0x9F
+        description: "Workout interval count"
+        response:
+          - { name: "interval_count", bytes: 1, type: "uint8", description: "Workout Interval Count" }
+
+      # --- Extended range (0xE8–0xEF) ---
+
+      PM_GET_WORKOUTDURATION:
+        id: 0xE8
+        description: "Workout duration with type indicator"
+        response:
+          - name: "duration_type"
+            bytes: 1
+            type: "uint8"
+            description: >
+              Time/Distance duration type:
+              0x00=Time, 0x40=Calories, 0x80=Distance, 0xC0=Watt-Min
+          - { name: "duration", bytes: 4, type: "uint32_be", description: "Duration value (MSB first)" }
+
+      PM_GET_WORKOTHER:
+        id: 0xE9
+        description: "Work other value"
+        response:
+          - { name: "work_other", bytes: 4, type: "uint32_be", description: "Work Other (MSB first)" }
+
+      PM_GET_EXTENDED_HRM:
+        id: 0xEA
+        description: "Extended heart rate monitor info"
+        response:
+          - { name: "channel_status", bytes: 1, type: "uint8", description: "HRM Channel Status" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "HRM manufacturer ID" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "HRM device type" }
+          - { name: "device_number", bytes: 4, type: "uint32_be", description: "HRM device number (MSB first)" }
+
+      PM_GET_DEFCALIBRATIONVERIFIED:
+        id: 0xEB
+        description: "Drag factor calibration verified status"
+        response:
+          - { name: "verified_status", bytes: 1, type: "uint8", description: "DF Calibration Verified Status" }
+
+      PM_GET_FLYWHEELSPEED:
+        id: 0xEC
+        description: "Flywheel speed in RPM"
+        response:
+          - { name: "flywheel_speed_rpm", bytes: 2, type: "uint16_be", description: "Flywheel speed, rpm (MSB first)" }
+
+      PM_GET_ERGMACHINETYPE:
+        id: 0xED
+        description: "Erg machine type"
+        response:
+          - { name: "erg_machine_type", bytes: 1, type: "uint8", description: "Erg machine type (see enums.yaml)" }
+
+      PM_GET_RACE_BEGINEND_TICKCOUNT:
+        id: 0xEE
+        description: "Race begin and end tick counts"
+        response:
+          - { name: "race_begin_tick", bytes: 4, type: "uint32_be", description: "Race begin tick time (MSB first)" }
+          - { name: "race_end_tick", bytes: 4, type: "uint32_be", description: "Race end tick time (MSB first)" }
+
+      PM_GET_PM5_FWUPDATESTATUS:
+        id: 0xEF
+        description: "PM5 firmware update status"
+        response:
+          - { name: "update_info_type", bytes: 2, type: "uint16_be", description: "Update info type (MSB first)" }
+          - { name: "update_status", bytes: 2, type: "uint16_be", description: "Update status (MSB first)" }
+
+  # =========================================================================
+  #  LONG GET CONFIGURATION (0x50–0x58)
+  #  Wrapper: CSAFE_GETPMCFG_CMD (0x7E)
+  #  These are long commands — require command data to produce a response.
+  # =========================================================================
+  long_get_config:
+    description: "Long proprietary get configuration commands"
+    wrapper: "CSAFE_GETPMCFG_CMD"
+    spec_page: "60-61"
+    commands:
+
+      PM_GET_ERG_NUMBER:
+        id: 0x50
+        description: "Get erg number by hardware address"
+        request:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (unit serial #)" }
+        response:
+          - { name: "erg_number", bytes: 1, type: "uint8", description: "Erg #" }
+
+      PM_GET_ERGNUMBERREQUEST:
+        id: 0x51
+        description: "Get erg number request — maps logical to physical address"
+        request:
+          - { name: "logical_erg_number", bytes: 1, type: "uint8", description: "Logical Erg Number Requested" }
+        response:
+          - { name: "physical_erg_number", bytes: 1, type: "uint8", description: "Physical Erg # Requested" }
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first)" }
+          - { name: "logical_erg_number", bytes: 1, type: "uint8", description: "Physical Erg #" }
+
+      PM_GET_USERIDSTRING:
+        id: 0x52
+        description: "Get user ID string by user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+        response:
+          - { name: "user_id", bytes: 10, type: "bytes", description: "User ID (MSB first, up to 10 bytes)" }
+
+      PM_GET_LOCALRACEPARTICIPANT:
+        id: 0x53
+        description: >
+          Get local race participant info.  Only available for firmware that
+          supports PC-less racing.
+        request:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first)" }
+          - { name: "user_id_string", bytes: 6, type: "bytes", description: "UserID String (MSB first)" }
+          - { name: "machine_type", bytes: 1, type: "uint8", description: "Machine type" }
+        response:
+          - { name: "race_type", bytes: 1, type: "uint8", description: "Race Type" }
+          - { name: "race_length", bytes: 4, type: "uint32_be", description: "Race Length (MSB first)" }
+          - { name: "race_participants", bytes: 1, type: "uint8", description: "Race Participants" }
+          - { name: "race_state", bytes: 1, type: "uint8", description: "Race State" }
+
+      PM_GET_USER_ID:
+        id: 0x54
+        description: "Get user ID by user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+        response:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "user_id", bytes: 4, type: "uint32_be", description: "User ID (MSB first)" }
+
+      PM_GET_USER_PROFILE:
+        id: 0x55
+        description: "Get user profile by user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+        response:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "user_weight", bytes: 2, type: "uint16_be", description: "User Weight (MSB first)" }
+          - { name: "dob_day", bytes: 1, type: "uint8", description: "User DOB Day" }
+          - { name: "dob_month", bytes: 1, type: "uint8", description: "User DOB Month" }
+          - { name: "dob_year", bytes: 2, type: "uint16_be", description: "User DOB Year (MSB first)" }
+          - { name: "gender", bytes: 1, type: "uint8", description: "User Gender" }
+
+      PM_GET_HRBELT_INFO:
+        id: 0x56
+        description: "Get HR belt info by user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+        response:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "Mfg ID" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "Device Type" }
+          - { name: "belt_id", bytes: 2, type: "uint16_be", description: "Belt ID (MSB first)" }
+
+      PM_GET_EXTENDED_HRBELT_INFO:
+        id: 0x57
+        description: "Get extended HR belt info (4-byte belt ID) by user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+        response:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "Mfg ID" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "Device Type" }
+          - { name: "belt_id", bytes: 4, type: "uint32_be", description: "Belt ID (MSB first, 4 bytes)" }
+
+      PM_GET_CURRENT_LOG_STRUCTURE:
+        id: 0x58
+        description: "Get current log structure by structure ID and split/interval number"
+        request:
+          - { name: "structure_id", bytes: 1, type: "uint8", description: "Structure ID enumeration" }
+          - { name: "split_interval_number", bytes: 1, type: "uint8", description: "Split/interval number (1-M)" }
+        response:
+          - { name: "structure_id", bytes: 1, type: "uint8", description: "Structure ID enumeration" }
+          - { name: "split_interval_number", bytes: 1, type: "uint8", description: "Split/interval number" }
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Bytes read" }
+          - { name: "data", bytes: "variable", type: "bytes", description: "Data read (1st through Nth byte)" }
+
+  # =========================================================================
+  #  SHORT GET DATA (0xA0–0xCF)
+  #  Wrapper: CSAFE_GETPMDATA_CMD (0x7F)
+  #  These are short commands (no request data).
+  # =========================================================================
+  short_get_data:
+    description: "Short proprietary get data commands"
+    wrapper: "CSAFE_GETPMDATA_CMD"
+    spec_page: "62-64"
+    commands:
+
+      PM_GET_WORKTIME:
+        id: 0xA0
+        description: "Current work time"
+        response:
+          - { name: "work_time", bytes: 4, type: "uint32_be", description: "Work Time (MSB first)" }
+
+      PM_GET_PROJECTED_WORKTIME:
+        id: 0xA1
+        description: "Projected work time"
+        response:
+          - { name: "projected_work_time", bytes: 4, type: "uint32_be", description: "Projected Work Time (MSB first)" }
+
+      PM_GET_TOTAL_RESTTIME:
+        id: 0xA2
+        description: "Total rest time"
+        response:
+          - { name: "total_rest_time", bytes: 4, type: "uint32_be", description: "Total Rest Time (MSB first)" }
+
+      PM_GET_WORKDISTANCE:
+        id: 0xA3
+        description: "Current work distance"
+        response:
+          - { name: "work_distance", bytes: 4, type: "uint32_be", description: "Work Distance (MSB first)" }
+
+      PM_GET_TOTAL_WORKDISTANCE:
+        id: 0xA4
+        description: "Total work distance"
+        response:
+          - { name: "total_work_distance", bytes: 4, type: "uint32_be", description: "Total Work Distance (MSB first)" }
+
+      PM_GET_PROJECTED_WORKDISTANCE:
+        id: 0xA5
+        description: "Projected work distance"
+        response:
+          - { name: "projected_work_distance", bytes: 4, type: "uint32_be", description: "Projected Work Distance (MSB first)" }
+
+      PM_GET_RESTDISTANCE:
+        id: 0xA6
+        description: "Current rest distance"
+        response:
+          - { name: "rest_distance", bytes: 2, type: "uint16_be", description: "Rest Distance (MSB first)" }
+
+      PM_GET_TOTAL_RESTDISTANCE:
+        id: 0xA7
+        description: "Total rest distance"
+        response:
+          - { name: "total_rest_distance", bytes: 4, type: "uint32_be", description: "Total Rest Distance (MSB first)" }
+
+      PM_GET_STROKE_500MPACE:
+        id: 0xA8
+        description: "Current stroke pace per 500m"
+        response:
+          - { name: "pace_500m", bytes: 4, type: "uint32_be", description: "Pace / 500m (MSB first)" }
+
+      PM_GET_STROKE_POWER:
+        id: 0xA9
+        description: "Current stroke power in watts"
+        response:
+          - { name: "stroke_watts", bytes: 4, type: "uint32_be", description: "Stroke Watts (MSB first)" }
+
+      PM_GET_STROKE_CALORICBURNRATE:
+        id: 0xAA
+        description: "Current stroke caloric burn rate (cals/hr)"
+        response:
+          - { name: "stroke_cals_hr", bytes: 4, type: "uint32_be", description: "Stroke Cals/Hr (MSB first)" }
+
+      PM_GET_SPLIT_AVG_500MPACE:
+        id: 0xAB
+        description: "Split/interval average pace per 500m"
+        response:
+          - { name: "split_avg_pace_500m", bytes: 4, type: "uint32_be", description: "Split Avg Pace / 500m (MSB first)" }
+
+      PM_GET_SPLIT_AVG_POWER:
+        id: 0xAC
+        description: "Split/interval average power in watts"
+        response:
+          - { name: "split_avg_watts", bytes: 4, type: "uint32_be", description: "Split Avg Watts (MSB first)" }
+
+      PM_GET_SPLIT_AVG_CALORICBURNRATE:
+        id: 0xAD
+        description: "Split/interval average caloric burn rate (cals/hr)"
+        response:
+          - { name: "split_avg_cals_hr", bytes: 4, type: "uint32_be", description: "Split Avg Cals/Hr (MSB first)" }
+
+      PM_GET_SPLIT_AVG_CALORIES:
+        id: 0xAE
+        description: "Split/interval average calories"
+        response:
+          - { name: "split_avg_cals", bytes: 4, type: "uint32_be", description: "Split Avg Cals (MSB first)" }
+
+      PM_GET_TOTAL_AVG_500MPACE:
+        id: 0xAF
+        description: "Total average pace per 500m"
+        response:
+          - { name: "total_avg_pace_500m", bytes: 4, type: "uint32_be", description: "Total Avg Pace / 500m (MSB first)" }
+
+      PM_GET_TOTAL_AVG_POWER:
+        id: 0xB0
+        description: "Total average power in watts"
+        response:
+          - { name: "total_avg_watts", bytes: 4, type: "uint32_be", description: "Total Avg Watts (MSB first)" }
+
+      PM_GET_TOTAL_AVG_CALORICBURNRATE:
+        id: 0xB1
+        description: "Total average caloric burn rate (cals/hr)"
+        response:
+          - { name: "total_avg_cals_hr", bytes: 4, type: "uint32_be", description: "Total Avg Cals/Hr (MSB first)" }
+
+      PM_GET_TOTAL_AVG_CALORIES:
+        id: 0xB2
+        description: "Total average calories"
+        response:
+          - { name: "total_avg_calories", bytes: 4, type: "uint32_be", description: "Total Avg Calories (MSB first)" }
+
+      PM_GET_STROKERATE:
+        id: 0xB3
+        description: "Current stroke rate (strokes/min)"
+        response:
+          - { name: "stroke_rate", bytes: 1, type: "uint8", description: "Strokes/Min" }
+
+      PM_GET_SPLIT_AVG_STROKERATE:
+        id: 0xB4
+        description: "Split/interval average stroke rate"
+        response:
+          - { name: "split_avg_stroke_rate", bytes: 1, type: "uint8", description: "Split/Interval Avg Strokes/Min" }
+
+      PM_GET_TOTAL_AVG_STROKERATE:
+        id: 0xB5
+        description: "Total average stroke rate"
+        response:
+          - { name: "total_avg_stroke_rate", bytes: 1, type: "uint8", description: "Total Avg Strokes/Min" }
+
+      PM_GET_AVG_HEARTRATE:
+        id: 0xB6
+        description: "Average heart rate (beats/min)"
+        response:
+          - { name: "avg_heartrate", bytes: 1, type: "uint8", description: "Avg Beats/Min" }
+
+      PM_GET_ENDING_AVG_HEARTRATE:
+        id: 0xB7
+        description: "Split/interval average heart rate at ending"
+        response:
+          - { name: "ending_avg_heartrate", bytes: 1, type: "uint8", description: "Split/Interval Avg Beats/Min" }
+
+      PM_GET_REST_AVG_HEARTRATE:
+        id: 0xB8
+        description: "Rest interval average heart rate"
+        response:
+          - { name: "rest_avg_heartrate", bytes: 1, type: "uint8", description: "Rest Interval Avg Beats/Min" }
+
+      PM_GET_SPLITTIME:
+        id: 0xB9
+        description: "Elapsed time per split"
+        response:
+          - { name: "split_time", bytes: 4, type: "uint32_be", description: "Elapsed Time / Split (MSB first)" }
+
+      PM_GET_LAST_SPLITTIME:
+        id: 0xBA
+        description: "Last elapsed time per split"
+        response:
+          - { name: "last_split_time", bytes: 4, type: "uint32_be", description: "Last Elapsed Time / Split (MSB first)" }
+
+      PM_GET_SPLITDISTANCE:
+        id: 0xBB
+        description: "Work distance per split"
+        response:
+          - { name: "split_distance", bytes: 4, type: "uint32_be", description: "Work Distance/Split (MSB first)" }
+
+      PM_GET_LAST_SPLITDISTANCE:
+        id: 0xBC
+        description: "Last work distance per split"
+        response:
+          - { name: "last_split_distance", bytes: 4, type: "uint32_be", description: "Last Work Distance/Split (MSB first)" }
+
+      PM_GET_LAST_RESTDISTANCE:
+        id: 0xBD
+        description: "Last rest interval distance"
+        response:
+          - { name: "last_rest_distance", bytes: 4, type: "uint32_be", description: "Last Rest Interval Distance (MSB first)" }
+
+      PM_GET_TARGETPACETIME:
+        id: 0xBE
+        description: "Target pace time"
+        response:
+          - { name: "target_pace_time", bytes: 4, type: "uint32_be", description: "Target Pace Time (MSB first)" }
+
+      PM_GET_STROKESTATE:
+        id: 0xBF
+        description: "Current stroke state"
+        response:
+          - { name: "stroke_state", bytes: 1, type: "uint8", description: "Stroke State (see enums.yaml)" }
+
+      PM_GET_STROKERATESTATE:
+        id: 0xC0
+        description: "Current stroke rate state"
+        response:
+          - { name: "stroke_rate_state", bytes: 1, type: "uint8", description: "Stroke Rate State" }
+
+      PM_GET_DRAGFACTOR:
+        id: 0xC1
+        description: "Current drag factor"
+        response:
+          - { name: "drag_factor", bytes: 1, type: "uint8", description: "Drag Factor" }
+
+      PM_GET_ENCODER_PERIOD:
+        id: 0xC2
+        description: "Encoder period as IEEE 754 float"
+        response:
+          - { name: "encoder_period", bytes: 4, type: "float32_be", description: "Encoder Period (float, MSB first)" }
+
+      PM_GET_HEARTRATESTATE:
+        id: 0xC3
+        description: "Heart rate state"
+        response:
+          - { name: "heartrate_state", bytes: 1, type: "uint8", description: "Heartrate State" }
+
+      PM_GET_SYNC_DATA:
+        id: 0xC4
+        description: "Sync data as IEEE 754 float"
+        response:
+          - { name: "sync_data", bytes: 4, type: "float32_be", description: "Sync Data (float, MSB first)" }
+
+      PM_GET_SYNCDATAALL:
+        id: 0xC5
+        description: "All sync data — distance, time, pace, and heart rate as floats"
+        response:
+          - { name: "work_distance", bytes: 4, type: "float32_be", description: "Work Distance (float, MSB first)" }
+          - { name: "work_time", bytes: 4, type: "float32_be", description: "Work Time (float, MSB first)" }
+          - { name: "stroke_pace", bytes: 4, type: "float32_be", description: "Stroke Pace (float, MSB first)" }
+          - { name: "avg_heartrate", bytes: 4, type: "float32_be", description: "Avg Heartrate (float, MSB first)" }
+
+      PM_GET_RACE_DATA:
+        id: 0xC6
+        description: "Race data — tick timestamp, meters, pace, elapsed time, rate, state"
+        response:
+          - { name: "tick_timestamp", bytes: 4, type: "uint32_be", description: "Tick Time Stamp (MSB first)" }
+          - { name: "total_race_meters", bytes: 4, type: "uint32_be", description: "Total Race Meters (MSB first)" }
+          - { name: "pace_500m", bytes: 2, type: "uint16_be", description: "500m Pace (MSB first)" }
+          - { name: "race_elapsed_time", bytes: 4, type: "uint32_be", description: "Race Elapsed Time (MSB first)" }
+          - { name: "stroke_rate", bytes: 1, type: "uint8", description: "Stroke Rate" }
+          - { name: "race_state", bytes: 1, type: "uint8", description: "Race State" }
+          - { name: "battery_percent", bytes: 1, type: "uint8", description: "Percent Battery Level" }
+          - { name: "stroke_state", bytes: 1, type: "uint8", description: "Stroke State" }
+          - { name: "rowing", bytes: 1, type: "uint8", description: "Rowing" }
+          - { name: "epm_status", bytes: 1, type: "uint8", description: "EPM Status" }
+          - { name: "race_operation_type", bytes: 1, type: "uint8", description: "Race Operation Type" }
+          - { name: "race_start_state", bytes: 1, type: "uint8", description: "Race Start State" }
+
+      PM_GET_TICK_TIME:
+        id: 0xC7
+        description: "Current tick time"
+        response:
+          - { name: "tick_time", bytes: 4, type: "uint32_be", description: "Tick Time (MSB first)" }
+
+      PM_GET_ERRORTYPE:
+        id: 0xC8
+        description: "Error type"
+        response:
+          - { name: "error_type", bytes: 1, type: "uint8", description: "Error Type" }
+
+      PM_GET_ERRORVALUE:
+        id: 0xC9
+        description: "Error value"
+        response:
+          - { name: "error_value", bytes: 2, type: "uint16_be", description: "Error Value (MSB first)" }
+
+      PM_GET_STATUSTYPE:
+        id: 0xCA
+        description: "Status type"
+        response:
+          - { name: "status_type", bytes: 1, type: "uint8", description: "Status Type" }
+
+      PM_GET_STATUSVALUE:
+        id: 0xCB
+        description: "Status value"
+        response:
+          - { name: "status_value", bytes: 1, type: "uint8", description: "Status Value" }
+
+      PM_GET_EPMSTATUS:
+        id: 0xCC
+        description: "EPM status"
+        response:
+          - { name: "epm_status", bytes: 1, type: "uint8", description: "EPM Status" }
+
+      PM_GET_DISPLAYUPDATETIME:
+        id: 0xCD
+        description: "Display update time"
+        response:
+          - { name: "display_update_time", bytes: 4, type: "uint32_be", description: "Display Update Time (MSB first)" }
+
+      PM_GET_SYNCFRACTIONALTIME:
+        id: 0xCE
+        description: "EPM fractional time"
+        response:
+          - { name: "epm_fractional_time", bytes: 1, type: "uint8", description: "EPM Fractional Time" }
+
+      PM_GET_RESTTIME:
+        id: 0xCF
+        description: "Current rest time"
+        response:
+          - { name: "rest_time", bytes: 2, type: "uint16_le", description: "Rest Time (LSB first)" }
+
+  # =========================================================================
+  #  LONG GET DATA (0x68–0x78)
+  #  Wrapper: CSAFE_GETPMDATA_CMD (0x7F)
+  #  These are long commands — require command data to produce a response.
+  # =========================================================================
+  long_get_data:
+    description: "Long proprietary get data commands"
+    wrapper: "CSAFE_GETPMDATA_CMD"
+    spec_page: "65-67"
+    commands:
+
+      PM_GET_MEMORY:
+        id: 0x68
+        description: >
+          Read memory block (max 64 bytes).  Response always returns 65 bytes;
+          first byte indicates valid byte count.
+        request:
+          - name: "device_type"
+            bytes: 1
+            type: "uint8"
+            description: "Device type (0=ESRAM, 1=Ext SRAM, 2=FLASH)"
+          - { name: "start_address", bytes: 4, type: "uint32_be", description: "Start address (MSB first)" }
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length (max 64)" }
+        response:
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Number of valid bytes read" }
+          - { name: "data", bytes: 64, type: "bytes", description: "Data read (up to 64 bytes)" }
+
+      PM_GET_LOGCARD_MEMORY:
+        id: 0x69
+        description: >
+          Read logcard memory block (max 64 bytes).  Response always returns
+          65 bytes; first byte indicates valid byte count.
+        request:
+          - { name: "start_address", bytes: 4, type: "uint32_be", description: "Start address (MSB first)" }
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length (max 64)" }
+        response:
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Number of valid bytes read" }
+          - { name: "data", bytes: 64, type: "bytes", description: "Data read (up to 64 bytes)" }
+
+      PM_GET_INTERNALLOGMEMORY:
+        id: 0x6A
+        description: >
+          Read internal log memory block (max 64 bytes).  Response always
+          returns 65 bytes; first byte indicates valid byte count.
+        request:
+          - { name: "start_address", bytes: 4, type: "uint32_be", description: "Start address (MSB first)" }
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length (max 64)" }
+        response:
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Number of valid bytes read" }
+          - { name: "data", bytes: 64, type: "bytes", description: "Data read (up to 64 bytes)" }
+
+      PM_GET_FORCEPLOTDATA:
+        id: 0x6B
+        description: >
+          Read force plot data (max 32 bytes / 16 words).  Response always
+          returns 33 bytes; first byte indicates valid byte count.  Only data
+          samples recorded since the last read are returned.
+        request:
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length (max 32 bytes / 16 words)" }
+        response:
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Number of valid bytes read" }
+          - { name: "data", bytes: 32, type: "uint16_be[]", description: "Force plot data (up to 16 words, MSB first each)" }
+
+      PM_GET_HEARTBEATDATA:
+        id: 0x6C
+        description: >
+          Read heartbeat data (max 32 bytes / 16 words).  Response always
+          returns 33 bytes; first byte indicates valid byte count.  Only data
+          samples recorded since the last read are returned.
+        request:
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length in bytes (max 32 bytes / 16 words)" }
+        response:
+          - { name: "bytes_read", bytes: 1, type: "uint8", description: "Number of valid bytes read" }
+          - { name: "data", bytes: 32, type: "uint16_le[]", description: "Heartbeat data (up to 16 words, LSB first each)" }
+
+      PM_GET_UI_EVENTS:
+        id: 0x6D
+        description: "Get user interface events"
+        request:
+          - { name: "unused", bytes: 1, type: "uint8", description: "0 (unused)" }
+        response:
+          - { name: "ui_events", bytes: 2, type: "uint16_be", description: "User I/F Events (MSB first)" }
+
+      PM_GET_STROKESTATS:
+        id: 0x6E
+        description: "Get detailed stroke statistics"
+        request:
+          - { name: "unused", bytes: 1, type: "uint8", description: "0 (unused)" }
+        response:
+          - { name: "stroke_distance", bytes: 2, type: "uint16_be", description: "Stroke Distance (MSB first)" }
+          - { name: "stroke_drive_time", bytes: 1, type: "uint8", description: "Stroke Drive Time" }
+          - { name: "stroke_recovery_time", bytes: 2, type: "uint16_be", description: "Stroke Recovery Time (MSB first)" }
+          - { name: "stroke_length", bytes: 1, type: "uint8", description: "Stroke Length" }
+          - { name: "drive_counter", bytes: 2, type: "uint16_be", description: "Drive Counter (MSB first)" }
+          - { name: "peak_drive_force", bytes: 2, type: "uint16_be", description: "Peak Drive Force (MSB first)" }
+          - { name: "impulse_drive_force", bytes: 2, type: "uint16_be", description: "Impulse Drive Force (MSB first)" }
+          - { name: "avg_drive_force", bytes: 2, type: "uint16_be", description: "Avg Drive Force (MSB first)" }
+          - { name: "work_per_stroke", bytes: 2, type: "uint16_be", description: "Work Per Stroke (MSB first)" }
+
+      PM_GET_DIAGLOG_RECORD_NUM:
+        id: 0x70
+        description: "Get diagnostic log record number by type"
+        request:
+          - { name: "record_type", bytes: 1, type: "uint8", description: "Record Type (Enum)" }
+        response:
+          - { name: "record_type", bytes: 1, type: "uint8", description: "Record Type (Enum)" }
+          - { name: "record_num", bytes: 2, type: "uint16_be", description: "Record Num (MSB first)" }
+
+      PM_GET_DIAGLOG_RECORD:
+        id: 0x71
+        description: "Get diagnostic log record data"
+        request:
+          - { name: "record_type", bytes: 1, type: "uint8", description: "Record Type (Enum)" }
+          - { name: "record_index", bytes: 2, type: "uint16_be", description: "Record Index (MSB first)" }
+          - { name: "record_offset_bytes", bytes: 2, type: "uint16_be", description: "Record Offset Bytes (MSB first)" }
+        response:
+          - { name: "record_type", bytes: 1, type: "uint8", description: "Record Type (Enum)" }
+          - { name: "record_index", bytes: 2, type: "uint16_be", description: "Record Index (MSB first)" }
+          - { name: "valid_record_bytes", bytes: 2, type: "uint16_be", description: "Valid Record Bytes (MSB first)" }
+          - { name: "data", bytes: 68, type: "bytes", description: "Data read (up to 68 bytes)" }
+
+      PM_GET_CURRENT_WORKOUT_HASH:
+        id: 0x72
+        description: "Get hash of current workout"
+        request:
+          - { name: "unused", bytes: 1, type: "uint8", description: "0 (unused)" }
+        response:
+          - { name: "hash", bytes: 8, type: "bytes", description: "Hash (MSB first, 8 bytes)" }
+          - { name: "unused", bytes: 8, type: "bytes", description: "Unused (0, 8 bytes)" }
+
+      # 0x73–0x75: Internal use
+      # 0x76: Command Wrapper (CSAFE_SETPMCFG_CMD)
+      # 0x77: Command Wrapper (CSAFE_SETPMDATA_CMD)
+
+      PM_GET_GAME_SCORE:
+        id: 0x78
+        description: "Get game score"
+        request:
+          - { name: "unused", bytes: 1, type: "uint8", description: "0 (unused)" }
+        response:
+          - { name: "game_id", bytes: 1, type: "uint8", description: "Game ID enumeration" }
+          - { name: "game_score", bytes: 2, type: "uint16_be", description: "Game Score (Fish/Darts: 1pt LSB; Target: 0.1% LSB)" }
+
+      # 0x7E: Command Wrapper (CSAFE_GETPMCFG_CMD)
+      # 0x7F: Command Wrapper (CSAFE_GETPMDATA_CMD)
+
+  # =========================================================================
+  #  SHORT SET CONFIGURATION (0xE0–0xE1)
+  #  Wrapper: CSAFE_SETPMCFG_CMD (0x76)
+  #  These are short commands (no command data beyond the command byte).
+  # =========================================================================
+  short_set_config:
+    description: "Short proprietary set configuration commands"
+    wrapper: "CSAFE_SETPMCFG_CMD"
+    spec_page: "67"
+    commands:
+
+      PM_SET_RESET_ALL:
+        id: 0xE0
+        description: "Reset all (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_RESET_ERG_NUMBER:
+        id: 0xE1
+        description: "Reset erg number"
+        response: null
+
+  # =========================================================================
+  #  SHORT SET DATA (0xD0–0xD9)
+  #  Wrapper: CSAFE_SETPMDATA_CMD (0x77)
+  #  These are short commands — sync data transmission.
+  # =========================================================================
+  short_set_data:
+    description: "Short proprietary set data commands (sync)"
+    wrapper: "CSAFE_SETPMDATA_CMD"
+    spec_page: "68"
+    commands:
+
+      PM_SET_SYNC_DISTANCE:
+        id: 0xD0
+        description: "Sync distance"
+
+      PM_SET_SYNC_STROKE_PACE:
+        id: 0xD1
+        description: "Sync stroke pace"
+
+      PM_SET_SYNC_AVG_HEARTRATE:
+        id: 0xD2
+        description: "Sync average heart rate"
+
+      PM_SET_SYNC_TIME:
+        id: 0xD3
+        description: "Sync time"
+
+      PM_SET_SYNC_SPLIT_DATA:
+        id: 0xD4
+        description: "Sync split data (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_SYNC_ENCODER_PERIOD:
+        id: 0xD5
+        description: "Sync encoder period (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_SYNC_VERSION_INFO:
+        id: 0xD6
+        description: "Sync version info (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_SYNC_RACETICKTIME:
+        id: 0xD7
+        description: "Sync race tick time"
+
+      PM_SET_SYNC_DATAALL:
+        id: 0xD8
+        description: "Sync all data"
+
+      PM_SET_SYNC_ROWINGACTIVE_TIME:
+        id: 0xD9
+        description: "Sync rowing active time"
+
+  # =========================================================================
+  #  LONG SET CONFIGURATION (0x00–0x3E)
+  #  Wrapper: CSAFE_SETPMCFG_CMD (0x76) or CSAFE_SETUSERCFG1_CMD (0x1A)
+  #  These are long commands — require command data.
+  # =========================================================================
+  long_set_config:
+    description: >
+      Long proprietary set configuration commands.  Key commands for workout
+      programming: PM_SET_WORKOUTTYPE (0x01), PM_SET_WORKOUTDURATION (0x03),
+      PM_SET_SPLITDURATION (0x05), PM_CONFIGURE_WORKOUT (0x14),
+      PM_SET_INTERVALTYPE (0x17), PM_SET_WORKOUTINTERVALCOUNT (0x18),
+      PM_SET_SCREENSTATE (0x13).
+    wrapper: "CSAFE_SETPMCFG_CMD"
+    alt_wrapper: "CSAFE_SETUSERCFG1_CMD"
+    spec_page: "68-75"
+    commands:
+
+      PM_SET_BAUDRATE:
+        id: 0x00
+        description: "Set baud rate (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_WORKOUTTYPE:
+        id: 0x01
+        description: "Set workout type"
+        request:
+          - { name: "workout_type", bytes: 1, type: "uint8", description: "Workout Type (see enums.yaml OBJ_WORKOUTTYPE_T)" }
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMSetWorkoutType (0x01)"
+
+      PM_SET_STARTTYPE:
+        id: 0x02
+        description: "Set start type (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_WORKOUTDURATION:
+        id: 0x03
+        description: "Set workout duration with type indicator"
+        request:
+          - name: "duration_type"
+            bytes: 1
+            type: "uint8"
+            description: >
+              Time/Distance duration type:
+              0x00=Time, 0x40=Calories, 0x60=Watt-Min, 0x80=Distance
+          - { name: "duration", bytes: 4, type: "uint32_be", description: "Duration value (MSB first)" }
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePmSetWorkoutDuration (0x03)"
+
+      PM_SET_RESTDURATION:
+        id: 0x04
+        description: "Set rest duration"
+        request:
+          - { name: "duration", bytes: 2, type: "uint16_be", description: "Duration (MSB first)" }
+
+      PM_SET_SPLITDURATION:
+        id: 0x05
+        description: "Set split duration with type indicator"
+        request:
+          - name: "duration_type"
+            bytes: 1
+            type: "uint8"
+            description: >
+              Time/Distance duration type:
+              0x00=Time, 0x40=Calories, 0x80=Distance, 0xC0=Watt-Min
+          - { name: "duration", bytes: 4, type: "uint32_be", description: "Duration value (MSB first)" }
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMSetSplitDuration (0x05)"
+          - "pROWess/py/main.py:300 — via SETUSRCFG1 wrapper (0x1A)"
+
+      PM_SET_TARGETPACETIME:
+        id: 0x06
+        description: "Set target pace time"
+        request:
+          - { name: "pace_time", bytes: 4, type: "uint32_be", description: "Pace Time (MSB first)" }
+
+      PM_SET_INTERVALIDENTIFIER:
+        id: 0x07
+        description: "Set interval identifier (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_OPERATIONALSTATE:
+        id: 0x08
+        description: "Set operational state (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_RACETYPE:
+        id: 0x09
+        description: "Set race type"
+        request:
+          - { name: "race_type", bytes: 1, type: "uint8", description: "Type" }
+
+      PM_SET_WARMUPDURATION:
+        id: 0x0A
+        description: "Set warm-up duration (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_RACELANESETUP:
+        id: 0x0B
+        description: "Set race lane setup"
+        request:
+          - { name: "erg_physical_address", bytes: 1, type: "uint8", description: "Erg Physical Address" }
+          - { name: "race_lane_number", bytes: 1, type: "uint8", description: "Race Lane Number" }
+
+      PM_SET_RACELANEVERIFY:
+        id: 0x0C
+        description: "Verify race lane"
+        request:
+          - { name: "erg_physical_address", bytes: 1, type: "uint8", description: "Erg Physical Address" }
+          - { name: "race_lane_number", bytes: 1, type: "uint8", description: "Race Lane Number" }
+
+      PM_SET_RACESTARTPARAMS:
+        id: 0x0D
+        description: "Set race start parameters"
+        request:
+          - name: "start_type"
+            bytes: 1
+            type: "uint8"
+            description: "Start Type (0=Random, 1=Countdown, 2=Random modified)"
+          - { name: "count_start", bytes: 1, type: "uint8", description: "Count Start Count / Race Start State" }
+          - { name: "ready_tick_count", bytes: 4, type: "uint32_be", description: "Ready Tick Count (MSB first)" }
+          - { name: "attention_tick_count", bytes: 4, type: "uint32_be", description: "Attention Tick Count / Countdown Ticks Per Number (MSB first)" }
+          - { name: "row_tick_count", bytes: 4, type: "uint32_be", description: "Row Tick Count (MSB first)" }
+
+      PM_SET_ERGSLAVEDISCOVERYREQUEST:
+        id: 0x0E
+        description: "Set erg slave discovery request"
+        request:
+          - { name: "starting_erg_slave_address", bytes: 1, type: "uint8", description: "Starting Erg Slave Address" }
+
+      PM_SET_BOATNUMBER:
+        id: 0x0F
+        description: "Set boat number"
+        request:
+          - { name: "boat_number", bytes: 1, type: "uint8", description: "Boat Number" }
+
+      PM_SET_ERGNUMBER:
+        id: 0x10
+        description: "Set erg number by hardware address"
+        request:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first, unit serial #)" }
+          - { name: "erg_number", bytes: 1, type: "uint8", description: "Erg Number (Logical Address)" }
+
+      PM_SET_COMMUNICATIONSTATE:
+        id: 0x11
+        description: "Set communication state (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_CMDUPLIST:
+        id: 0x12
+        description: "Set command upload list (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_SCREENSTATE:
+        id: 0x13
+        description: >
+          Set screen state.  Processed asynchronously by the UI task — poll
+          PM_GET_SCREENSTATESTATUS (0x86) for completion.
+        request:
+          - { name: "screen_type", bytes: 1, type: "uint8", description: "Screen Type (see enums.yaml)" }
+          - { name: "screen_value", bytes: 1, type: "uint8", description: "Screen Value (see enums.yaml)" }
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMSetScreenState (0x13)"
+
+      PM_CONFIGURE_WORKOUT:
+        id: 0x14
+        description: "Configure workout programming mode (enable/disable)"
+        request:
+          - name: "programming_mode"
+            bytes: 1
+            type: "uint8"
+            description: "Programming mode (0=Disable, 1=Enable)"
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMConfigureWorkout (0x14)"
+
+      PM_SET_TARGETAVGWATTS:
+        id: 0x15
+        description: "Set target average watts"
+        request:
+          - { name: "avg_watts", bytes: 2, type: "uint16_be", description: "Avg Watts (MSB first)" }
+
+      PM_SET_TARGETCALSPERHR:
+        id: 0x16
+        description: "Set target calories per hour"
+        request:
+          - { name: "cals_per_hr", bytes: 2, type: "uint16_be", description: "Cals/Hr (MSB first)" }
+
+      PM_SET_INTERVALTYPE:
+        id: 0x17
+        description: "Set interval type"
+        request:
+          - name: "interval_type"
+            bytes: 1
+            type: "uint8"
+            description: >
+              Interval Type: 0=Time, 1=Distance, 2=Rest,
+              3=Time w/ Undefined Rest, 4=Distance w/ Undefined Rest,
+              5=Undefined Rest, 6=Calorie, 7=Calorie w/ Undefined Rest,
+              8=WattMinute, 9=WattMinute w/ Undefined Rest
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMSetIntervalType (0x17)"
+
+      PM_SET_WORKOUTINTERVALCOUNT:
+        id: 0x18
+        description: "Set workout interval count"
+        request:
+          - { name: "interval_count", bytes: 1, type: "uint8", description: "Interval Count" }
+        cross_ref:
+          - "c2bluetooth commands.dart — CsafePMSetWorkoutIntervalCount (0x18)"
+
+      PM_SET_DISPLAYUPDATERATE:
+        id: 0x19
+        description: "Set display update rate"
+        request:
+          - { name: "update_rate", bytes: 1, type: "uint8", description: "Display Update Rate" }
+
+      PM_SET_AUTHENPASSWORD:
+        id: 0x1A
+        description: "Set authentication password"
+        request:
+          - { name: "hw_address", bytes: 4, type: "uint32_be", description: "HW address (MSB first)" }
+          - { name: "password", bytes: 8, type: "bytes", description: "Authentication Password (MSB first, 8 bytes)" }
+        response:
+          - { name: "result", bytes: 1, type: "uint8", description: "Result" }
+
+      PM_SET_TICKTIME:
+        id: 0x1B
+        description: "Set tick time"
+        request:
+          - { name: "tick_time", bytes: 4, type: "uint32_be", description: "Tick Time (MSB first)" }
+
+      PM_SET_TICKTIMEOFFSET:
+        id: 0x1C
+        description: "Set tick time offset"
+        request:
+          - { name: "tick_time_offset", bytes: 4, type: "uint32_be", description: "Tick Time Offset (MSB first)" }
+
+      PM_SET_RACEDATASAMPLETICKS:
+        id: 0x1D
+        description: "Set race data sample tick interval"
+        request:
+          - { name: "sample_tick", bytes: 4, type: "uint32_be", description: "Sample Tick (MSB first)" }
+
+      PM_SET_RACEOPERATIONTYPE:
+        id: 0x1E
+        description: >
+          Set race operation type.  If set to anything other than
+          RACEOPERATIONTYPE_DISABLE, extended frame addressing is required.
+        request:
+          - { name: "operation_type", bytes: 1, type: "uint8", description: "Type (see enums.yaml)" }
+
+      PM_SET_RACESTATUSDISPLAYTICKS:
+        id: 0x1F
+        description: "Set race status display tick interval"
+        request:
+          - { name: "display_tick", bytes: 4, type: "uint32_be", description: "Display Tick (MSB first)" }
+
+      PM_SET_RACESTATUSWARNINGTICKS:
+        id: 0x20
+        description: "Set race status warning tick interval"
+        request:
+          - { name: "warning_tick", bytes: 4, type: "uint32_be", description: "Warning Tick (MSB first)" }
+
+      PM_SET_RACEIDLEMODEPARAMS:
+        id: 0x21
+        description: "Set race idle mode parameters"
+        request:
+          - { name: "doze_seconds", bytes: 2, type: "uint16_be", description: "Doze Sec (MSB first)" }
+          - { name: "sleep_seconds", bytes: 2, type: "uint16_be", description: "Sleep Sec (MSB first)" }
+          - { name: "unused", bytes: 4, type: "bytes", description: "Unused (4 bytes)" }
+
+      PM_SET_DATETIME:
+        id: 0x22
+        description: "Set date and time on the PM"
+        request:
+          - { name: "hours", bytes: 1, type: "uint8", description: "Time Hours (1-12)" }
+          - { name: "minutes", bytes: 1, type: "uint8", description: "Time Minutes (0-59)" }
+          - { name: "meridiem", bytes: 1, type: "uint8", description: "Time Meridiem (0=AM, 1=PM)" }
+          - { name: "month", bytes: 1, type: "uint8", description: "Date Month (1-12)" }
+          - { name: "day", bytes: 1, type: "uint8", description: "Date Day (1-31)" }
+          - { name: "year", bytes: 2, type: "uint16_be", description: "Date Year (MSB first)" }
+
+      PM_SET_LANGUAGETYPE:
+        id: 0x23
+        description: "Set language type"
+        request:
+          - { name: "language_type", bytes: 1, type: "uint8", description: "Language Type" }
+
+      PM_SET_WIFICONFIG:
+        id: 0x24
+        description: "Set WiFi configuration"
+        request:
+          - { name: "config_index", bytes: 1, type: "uint8", description: "Config Index" }
+          - { name: "wep_mode", bytes: 1, type: "uint8", description: "WEP Mode" }
+
+      PM_SET_CPUTICKRATE:
+        id: 0x25
+        description: "Set CPU/Tick rate"
+        request:
+          - { name: "cpu_tick_rate", bytes: 1, type: "uint8", description: "CPU/Tick Rate" }
+
+      PM_SET_LOGCARDUSER:
+        id: 0x26
+        description: "Set logcard user number"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "Logcard User #" }
+
+      PM_SET_SCREENERRORMODE:
+        id: 0x27
+        description: "Set screen error mode"
+        request:
+          - { name: "mode", bytes: 1, type: "uint8", description: "Mode (disable/enable)" }
+
+      PM_SET_CABLETEST:
+        id: 0x28
+        description: "Set cable test mode (PM3/PM4 only, not for PC use)"
+        request:
+          - { name: "mode", bytes: 1, type: "uint8", description: "Mode (disable/enable)" }
+          - { name: "dummy_data", bytes: 79, type: "bytes", description: "Dummy Data (79 bytes)" }
+
+      PM_SET_USER_ID:
+        id: 0x29
+        description: "Set user ID"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "user_id", bytes: 4, type: "uint32_be", description: "User ID (MSB first)" }
+
+      PM_SET_USER_PROFILE:
+        id: 0x2A
+        description: "Set user profile"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "user_weight", bytes: 2, type: "uint16_be", description: "User Weight (MSB first)" }
+          - { name: "dob_day", bytes: 1, type: "uint8", description: "User DOB Day" }
+          - { name: "dob_month", bytes: 1, type: "uint8", description: "User DOB Month" }
+          - { name: "dob_year", bytes: 2, type: "uint16_be", description: "User DOB Year (MSB first)" }
+          - { name: "gender", bytes: 1, type: "uint8", description: "User Gender" }
+
+      PM_SET_HRM:
+        id: 0x2B
+        description: "Set heart rate monitor device info"
+        request:
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "Device Manufacture ID" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "Device Type" }
+          - { name: "device_num", bytes: 2, type: "uint16_be", description: "Device Num (MSB first)" }
+
+      PM_SET_RACESTARTINGPHYSICALADDRESS:
+        id: 0x2C
+        description: "Set race starting physical address"
+        request:
+          - { name: "first_erg_address", bytes: 1, type: "uint8", description: "Physical Address of First Erg In Race" }
+
+      PM_SET_HRBELT_INFO:
+        id: 0x2D
+        description: "Set HR belt info for a user"
+        request:
+          - { name: "user_number", bytes: 1, type: "uint8", description: "User Number" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "Mfg ID" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "Device Type" }
+          - { name: "belt_id", bytes: 2, type: "uint16_be", description: "Belt ID (MSB first)" }
+
+      # Note: 0x2E is not listed in the spec
+
+      PM_SET_SENSOR_CHANNEL:
+        id: 0x2F
+        description: "Set sensor channel"
+        request:
+          - { name: "rf_frequency", bytes: 1, type: "uint8", description: "RF Frequency" }
+          - { name: "rf_period_hz", bytes: 2, type: "uint16_be", description: "RF Period Hz (MSB first)" }
+          - { name: "datapage_pattern", bytes: 1, type: "uint8", description: "Datapage Pattern" }
+          - { name: "activity_timeout", bytes: 1, type: "uint8", description: "Activity Timeout" }
+
+  # =========================================================================
+  #  LONG SET DATA (0x30–0x3E)
+  #  Wrapper: CSAFE_SETPMDATA_CMD (0x77)
+  #  These are long commands — require command data.
+  # =========================================================================
+  long_set_data:
+    description: "Long proprietary set data commands"
+    wrapper: "CSAFE_SETPMDATA_CMD"
+    spec_page: "72-75"
+    commands:
+
+      PM_SET_TEAM_DISTANCE:
+        id: 0x30
+        description: "Set team distance (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_TEAM_FINISH_TIME:
+        id: 0x31
+        description: "Set team finish time (not implemented)"
+        status: "not_implemented"
+
+      PM_SET_RACEPARTICIPANT:
+        id: 0x32
+        description: "Set race participant info (name is null-terminated, max 16 chars)"
+        request:
+          - { name: "racer_id", bytes: 1, type: "uint8", description: "Racer ID (Erg physical address)" }
+          - { name: "racer_name", bytes: 17, type: "string", description: "Racer Name (null-terminated, max 16 chars + null)" }
+
+      PM_SET_RACESTATUS:
+        id: 0x33
+        description: "Set race status for up to 4 racers plus team distance"
+        request:
+          - { name: "racer1_id", bytes: 1, type: "uint8", description: "First Racer ID" }
+          - { name: "racer1_position", bytes: 1, type: "uint8", description: "First Racer Position" }
+          - { name: "racer1_delta", bytes: 4, type: "uint32_be", description: "First Racer Delta Distance/Time (MSB first)" }
+          - { name: "racer2_id", bytes: 1, type: "uint8", description: "2nd Racer ID" }
+          - { name: "racer2_position", bytes: 1, type: "uint8", description: "2nd Racer Position" }
+          - { name: "racer2_delta", bytes: 4, type: "uint32_be", description: "2nd Racer Delta Distance/Time (MSB first)" }
+          - { name: "racer3_id", bytes: 1, type: "uint8", description: "3rd Racer ID" }
+          - { name: "racer3_position", bytes: 1, type: "uint8", description: "3rd Racer Position" }
+          - { name: "racer3_delta", bytes: 4, type: "uint32_be", description: "3rd Racer Delta Distance/Time (MSB first)" }
+          - { name: "racer4_id", bytes: 1, type: "uint8", description: "4th Racer ID" }
+          - { name: "racer4_position", bytes: 1, type: "uint8", description: "4th Racer Position" }
+          - { name: "racer4_delta", bytes: 4, type: "uint32_be", description: "4th Racer Delta Distance/Time (MSB first)" }
+          - { name: "team_distance", bytes: 4, type: "uint32_be", description: "Team Distance (MSB first)" }
+          - { name: "mode", bytes: 1, type: "uint8", description: "Mode" }
+
+      PM_SET_LOGCARD_MEMORY:
+        id: 0x34
+        description: "Write logcard memory block (max 64 bytes)"
+        request:
+          - { name: "start_address", bytes: 4, type: "uint32_be", description: "Start address (MSB first)" }
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length (max 64)" }
+          - { name: "data", bytes: 64, type: "bytes", description: "Data to set (up to 64 bytes)" }
+        response:
+          - { name: "bytes_written", bytes: 1, type: "uint8", description: "Bytes written" }
+
+      PM_SET_DISPLAYSTRING:
+        id: 0x35
+        description: "Set display string (up to 32 characters)"
+        request:
+          - { name: "characters", bytes: 32, type: "string", description: "Characters (up to 32)" }
+
+      PM_SET_DISPLAYBITMAP:
+        id: 0x36
+        description: "Set display bitmap (max 64 data bytes per block)"
+        request:
+          - { name: "bitmap_index", bytes: 2, type: "uint16_be", description: "Bitmap index (MSB first)" }
+          - { name: "block_length", bytes: 1, type: "uint8", description: "Block length" }
+          - { name: "data", bytes: 64, type: "bytes", description: "Bitmap data (up to 64 bytes)" }
+        response:
+          - { name: "total_bitmap_bytes", bytes: 2, type: "uint16_be", description: "Total bitmap bytes (MSB first)" }
+
+      PM_SET_LOCALRACEPARTICIPANT:
+        id: 0x37
+        description: >
+          Set local race participant.  Only available for firmware that
+          supports PC-less racing.
+        request:
+          - { name: "race_type", bytes: 1, type: "uint8", description: "Race Type" }
+          - { name: "race_length", bytes: 4, type: "uint32_be", description: "Race Length (MSB first)" }
+          - { name: "race_participants", bytes: 1, type: "uint8", description: "Race Participants" }
+          - { name: "race_state", bytes: 1, type: "uint8", description: "Race State" }
+          - { name: "race_lane", bytes: 1, type: "uint8", description: "Race Lane" }
+
+      PM_SET_GAMEPARAMS:
+        id: 0x38
+        description: "Set game parameters (type, durations, targets)"
+        request:
+          - { name: "game_type_id", bytes: 1, type: "uint8", description: "Game Type ID" }
+          - { name: "workout_duration_time", bytes: 4, type: "uint32_be", description: "Workout Duration Time (MSB first)" }
+          - { name: "split_duration_time", bytes: 4, type: "uint32_be", description: "Split Duration Time (MSB first)" }
+          - { name: "target_pace_time", bytes: 4, type: "uint32_be", description: "Target Pace Time (MSB first)" }
+          - { name: "target_avg_watts", bytes: 4, type: "uint32_be", description: "Target Avg Watts (MSB first)" }
+          - { name: "target_cals_per_hr", bytes: 4, type: "uint32_be", description: "Target Cals Per Hour (MSB first)" }
+          - { name: "target_stroke_rate", bytes: 1, type: "uint8", description: "Target Stroke Rate" }
+
+      PM_SET_EXTENDED_HRBELT_INFO:
+        id: 0x39
+        description: "Set extended HR belt info (4-byte belt ID)"
+        request:
+          - { name: "unused", bytes: 1, type: "uint8", description: "Unused" }
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "HRM mfg id" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "HRM device type" }
+          - { name: "belt_id", bytes: 4, type: "uint32_be", description: "HRM belt id (MSB first)" }
+
+      PM_SET_EXTENDED_HRM:
+        id: 0x3A
+        description: "Set extended HRM device info (4-byte belt ID)"
+        request:
+          - { name: "mfg_id", bytes: 1, type: "uint8", description: "HRM mfg id" }
+          - { name: "device_type", bytes: 1, type: "uint8", description: "HRM device type" }
+          - { name: "belt_id", bytes: 4, type: "uint32_be", description: "HRM belt id (MSB first)" }
+
+      PM_SET_LEDBACKLIGHT:
+        id: 0x3B
+        description: "Set LED backlight state and intensity"
+        request:
+          - { name: "state", bytes: 1, type: "uint8", description: "State (enable/disable)" }
+          - { name: "intensity", bytes: 1, type: "uint8", description: "Intensity (0-100%)" }
+
+      PM_SET_DIAGLOG_RECORD_ARCHIVE:
+        id: 0x3C
+        description: "Archive diagnostic log record (65535 archives all)"
+        request:
+          - { name: "record_type", bytes: 1, type: "uint8", description: "Record Type (Enum)" }
+          - { name: "record_index", bytes: 2, type: "uint16_be", description: "Record Index (MSB first; 65535 archives all)" }
+
+      PM_SET_WIRELESS_CHANNEL_CONFIG:
+        id: 0x3D
+        description: "Set wireless channel configuration bitmask"
+        request:
+          - { name: "channel_bitmask", bytes: 4, type: "uint32_be", description: "Wireless channel bit mask (MSB first)" }
+
+      PM_SET_RACECONTROLPARAMS:
+        id: 0x3E
+        description: "Set race control parameters"
+        request:
+          - { name: "undefined_rest_transition_time", bytes: 2, type: "uint16_be", description: "Undefined rest to work transition time, 1sec LSB (MSB first)" }
+          - { name: "undefined_rest_interval", bytes: 2, type: "uint16_be", description: "Undefined rest interval, 1sec LSB (MSB first)" }
+          - { name: "race_prompt_bitmap_duration", bytes: 4, type: "uint32_be", description: "Race prompt bitmap display duration, 1sec LSB (MSB first)" }
+          - { name: "time_cap_duration", bytes: 4, type: "uint32_be", description: "Time Cap duration, 1sec LSB (MSB first)" }
+
+# ===========================================================================
+#  Reserved / Internal IDs within the proprietary range
+# ===========================================================================
+reserved_ids:
+  - { id: 0x73, description: "Internal use" }
+  - { id: 0x74, description: "Internal use" }
+  - { id: 0x75, description: "Internal use" }
+  - { id: 0x76, description: "Command wrapper — CSAFE_SETPMCFG_CMD" }
+  - { id: 0x77, description: "Command wrapper — CSAFE_SETPMDATA_CMD" }
+  - { id: 0x7E, description: "Command wrapper — CSAFE_GETPMCFG_CMD" }
+  - { id: 0x7F, description: "Command wrapper — CSAFE_GETPMDATA_CMD" }

@@ -1,0 +1,1307 @@
+# PM5 Error Codes
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Section: Appendix D — Error Code List (pp110-160)
+#
+# Error display format on PM: <Error Code> - <Screen Number>
+#
+# NOTE: Some error names appear twice in the spec with different values.
+# These represent the same logical error on different PM hardware versions:
+#   - Lower range (~1-2600): PM3/PM4 era error codes
+#   - Higher range (~10000-12000): PM5/nRF52-based error codes
+# Duplicate-value entries are suffixed with __V2 in this file.
+# Entries with identical values across both occurrences are deduplicated.
+
+error_codes:
+
+  # -----------------------------------------------------------------------
+  # APCOMM — Application communications errors
+  # -----------------------------------------------------------------------
+  APCOMM:
+    description: "Application communications errors"
+    errors:
+      APCOMM_INIT_ERR: 10
+      APCOMM_INVALIDPW_ERR: 11
+
+  # -----------------------------------------------------------------------
+  # APDIAGLOG — Application diagnostic log errors
+  # -----------------------------------------------------------------------
+  APDIAGLOG:
+    description: "Application diagnostic log errors"
+    errors:
+      APDIAGLOG_LOGRECORD_PENDING_OVERRUN_ERR: 2600
+      APDIAGLOG_INVALID_LOGRECORDTYPE_ERR: 2601
+      APDIAGLOG_INVALID_LOGEVENT_ERR: 2602  # * Errors returned by Radios in PM5v1*
+
+  # -----------------------------------------------------------------------
+  # APFILE — Application file system errors
+  # -----------------------------------------------------------------------
+  APFILE:
+    description: "Application file system errors"
+    errors:
+      APFILE_FWUPDBUNDLE_INVALID_ERR: 1960
+      APFILE_INTERNALBUNDLE_INVALID_ERR: 1961
+      APFILE_SPIIMAGE_INVALID_ERR: 1962
+      APFILE_SPECIALTOKEN_INVALID_ERR: 1963
+      APFILE_FWUPDATE_ABORTED_ERR: 1964
+      APFILE_FILEBACKUP_INVALIDID_ERR: 1965
+      APFILE_FILEIMAGE_INVALID_ERR: 1966
+      APFILE_FAVORITES_INVALID_ERR: 1967
+
+  # -----------------------------------------------------------------------
+  # APFWUPDATE — Application firmware update errors
+  # -----------------------------------------------------------------------
+  APFWUPDATE:
+    description: "Application firmware update errors"
+    errors:
+      APFWUPDATE_INTBUNDLE_IMAGECNT_ERR: 1980
+      APFWUPDATE_FONT_PROGRAMMING_ERR: 1981
+      APFWUPDATE_LOADER_PROGRAMMING_ERR: 1982
+      APFWUPDATE_LDRUPD_PROGRAMMING_ERR: 1983
+      APFWUPDATE_SCREEN_PROGRAMMING_ERR: 1984
+      APFWUPDATE_APPINT_PROGRAMMING_ERR: 1985
+      APFWUPDATE_APPEXT_PROGRAMMING_ERR: 1986
+      APFWUPDATE_BUNDLE_PROGRAMMING_ERR: 1987
+      APFWUPDATE_APPANT_PROGRAMMING_ERR: 1989
+      APFWUPDATE_APPBLE_PROGRAMMING_ERR: 1990
+      APFWUPDATE_INTBUNDLE_INVALID_ERR: 1991
+      APFWUPDATE_UPDATEINFO_INVALID_ERR: 1992
+      APFWUPDATE_UPDATEINFOAPP_INVALID_ERR: 1993
+      APFWUPDATE_APPNRF_PROGRAMMING_ERR: 1994
+      APFWUPDATE_SOFTDEVNRF_PROGRAMMING_ERR: 1995
+      APFWUPDATE_LDRNRF_PROGRAMMING_ERR: 1996
+      APFWUPDATE_LUPNRF_PROGRAMMING_ERR: 1997
+      APFWUPDATE_LDRSFE_PROGRAMMING_ERR: 1998
+      APFWUPDATE_LUPSFE_PROGRAMMING_ERR: 1999
+      APFWUPDATE_APPSFE_PROGRAMMING_ERR: 2000
+      APFWUPDATE_DFDATA_PROGRAMMING_ERR: 2001
+
+  # -----------------------------------------------------------------------
+  # APHEADER — Application header errors
+  # -----------------------------------------------------------------------
+  APHEADER:
+    description: "Application header errors"
+    errors:
+      APHEADER_INVALIDFONTHDR_ERR: 80
+      APHEADER_INVALIDSCRNHDR_ERR: 81
+      APHEADER_INVALIDLDRHDR_ERR: 82
+      APHEADER_INVALIDAPPHDR_ERR: 83
+      APHEADER_INVALIDMFGHDR_ERR: 84
+      APHEADER_INVALIDEXPMFGHDR_ERR: 85
+      APHEADER_INVALIDDBMFGHDR_ERR: 86
+      APHEADER_INVALID_UPDATETYPE_ERR: 87
+      APHEADER_IMAGE_PROGRAMMING_ERR: 88
+      APHEADER_UPDATEINFO_PROGRAMMING_ERR: 89
+      APHEADER_INVALIDLDRHDR_ERR__V2: 10127  # PM5v2 only
+      APHEADER_INVALIDAPPHDR_ERR__V2: 10128  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # APLOG — Application log/user management errors
+  # -----------------------------------------------------------------------
+  APLOG:
+    description: "Application log/user management errors"
+    errors:
+      APLOG_INIT_ERR: 20
+      APLOG_INVALIDUSER_ERR: 21
+      APLOG_USERSTATINFO_STORAGE_ERR: 22
+      APLOG_USERSTATINFO_RETRIEVE_ERR: 23
+      APLOG_USERDELETE_ERR: 24
+      APLOG_USERDYNAMINFO_STORAGE_ERR: 25
+      APLOG_USERDYNAMINFO_RETRIEVE_ERR: 26
+      APLOG_CUSTOMWORKOUT_STORAGE_ERR: 27
+      APLOG_CUSTOMWORKOUT_RETRIEVE_ERR: 28
+      APLOG_CUSTOMWORKOUT_INSUFFMEM_ERR: 29
+      APLOG_CUSTOMWORKOUT_INVALID_ERR: 30
+      APLOG_INVALIDCARDOPERATION_ERR: 31
+      APLOG_COPYTOCARD_INSUFFMEM_ERR: 32
+      APLOG_INVALIDCUSTOMWORKOUT_ERR: 33
+      APLOG_INVALIDWORKOUTIDENT_ERR: 34
+      APLOG_INVALIDLISTLENGTH_ERR: 35
+      APLOG_INVALIDINPUTPARAM_ERR: 36
+      APLOG_INVALIDWORKOUTNUM_ERR: 37
+      APLOG_CARDNOTPRESENT_ERR: 38
+      APLOG_INVALIDINTLOGADDR_ERR: 39
+      APLOG_INVALIDLOGHDRPTR_ERR: 40
+      APLOG_MAXSPLITSEXCEEDED_ERR: 41
+      APLOG_NODATAAVAILABLE_ERR: 42  # 42 - Some kind of internal problem has occurred - specifically some data is missing when trying to display help (textbox
+      APLOG_INVALIDCARDSTRUCTREV_ERR: 43
+      APLOG_CARDOPERATIONTIMEOUT_ERR: 44
+      APLOG_INVALIDLOGSIZE_ERR: 45
+      APLOG_LOGENTRYVALIDATE_ERR: 46
+      APLOG_USERDYNAMICVALIDATE_ERR: 47
+      APLOG_CARDINFOVALIDATE_ERR: 48
+      APLOG_CARDACCESS_ERR: 49
+      APLOG_CORRUPT_INTERNALLOGMEM_ERR: 95
+
+  # -----------------------------------------------------------------------
+  # APMAIN — Application main task errors
+  # -----------------------------------------------------------------------
+  APMAIN:
+    description: "Application main task errors"
+    errors:
+      APMAIN_TASKCREATE_ERR: 1
+      APMAIN_TASKDELETE_ERR: 2
+      APMAIN_VOLTSUPPLY_ERR: 3
+      APMAIN_USERKEY_STUCK_ERR: 4  # A button is stuck in the 'down' (pressed) position, or possibly corrosion or liquids on the circuit board. Proposed Error
+      APMAIN_TASK_INVALID_ERR: 5
+      APMAIN_MFGINFO_INVALID_ERR: 6
+      APMAIN_CIPHERKEY_INVALID_ERR: 7
+      APMAIN_FAILEDFLASHVERIFY_ERR: 8
+
+  # -----------------------------------------------------------------------
+  # APMEM — Application memory management errors
+  # -----------------------------------------------------------------------
+  APMEM:
+    description: "Application memory management errors"
+    errors:
+      APMEM_CALEEPROM_ERR: 75
+      APMEM_MFGEEPROM_ERR: 76
+      APMEM_USREEPROM_ERR: 77
+      APMEM_DBEEPROM_ERR: 78
+
+  # -----------------------------------------------------------------------
+  # APPM3 — Application PM-specific errors
+  # -----------------------------------------------------------------------
+  APPM3:
+    description: "Application PM-specific errors"
+    errors:
+      APPM3_INVALIDWORKOUTNUM_ERR: 60
+      APPM3_NOPLOTDATA_ERR: 61
+      APPM3_INVALIDMFGINFO_ERR: 62
+      APPM3_INVALIDCALINFO_ERR: 63
+      APPM3_INVALIDWORKOUTDURATION_ERR: 64  # See 65 for similar situation
+      APPM3_INVALIDSPLITDURATION_ERR: 65  # See 65 for similar situation APPM3_INVALIDRESTDURATION_ERR' 66 More than likely, a software application like RowPro etc.
+      APPM3_INVALIDINTERVALCNT_ERR: 67  # See 65 for similar situation
+      APPM3_INVALIDWORKOUTTYPE_ERR: 68  # See 65 for similar situation
+      APPM3_INVALIDDBMFGINFO_ERR: 69
+
+  # -----------------------------------------------------------------------
+  # APRACE — Application race mode errors
+  # -----------------------------------------------------------------------
+  APRACE:
+    description: "Application race mode errors"
+    errors:
+      APRACE_INVALIDWORKOUTTYPE_ERR: 1700
+      APRACE_INVALID_RACECONFIG_ERR: 1701
+      APRACE_FLYWHEELS_MOVING_ERR: 1702
+
+  # -----------------------------------------------------------------------
+  # APRFANT — Application RF/ANT errors
+  # -----------------------------------------------------------------------
+  APRFANT:
+    description: "Application RF/ANT errors"
+    errors:
+      APRFANT_INVALID_DISCOVER_DEVICE_ERR: 10050  # PM5v2 only
+      APRFANT_TX_POWER_ERR: 10051  # PM5v2 only
+      APRFANT_HRM_DISCONNECT_ERR: 10052  # PM5v2 only
+      APRFANT_FEC_DISCONNECT_ERR: 10053  # PM5v2 only
+      APRFANT_C2RACE_DISCONNECT_ERR: 10054  # PM5v2 only
+      APRFANT_FE_DISCONNECT_ERR: 10055  # PM5v2 only
+      APRFANT_CONNECT_PARAM_ERR: 10056  # PM5v2 only
+      APRFANT_INVALID_DEVICETYPE_ERR: 10057  # PM5v2 only
+      APRFANT_INVALID_CONNECT_DEVICE_ERR: 10058  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # APRFBLE — Application RF/BLE errors
+  # -----------------------------------------------------------------------
+  APRFBLE:
+    description: "Application RF/BLE errors"
+    errors:
+      APRFBLE_NOT_FOUND_ERR: 10075  # PM5v2 only
+      APRFBLE_LIST_FULL_ERR: 10076  # PM5v2 only
+      APRFBLE_INVALID_PARAM_ERR: 10077  # PM5v2 only
+      APRFBLE_TX_POWER_ERR: 10078  # PM5v2 only
+      APRFBLE_HRM_DISCONNECT_ERR: 10079  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # APROWXX — Application rowing machine errors
+  # -----------------------------------------------------------------------
+  APROWXX:
+    description: "Application rowing machine errors"
+    errors:
+      APROWXX_INVALID_DF_ERR: 50  # Bad drag factor (generic)
+      APROWXX_INVALID_DF_TACHDURATION_ERR: 51  # Bad drag factor (specific)
+      APROWXX_INVALID_DF_STROKEDURATION_ERR: 52  # Bad drag factor (specific)
+      APROWXX_INVALID_DF_RECOVERYDURATION_ERR: 53  # Bad drag factor (specific)
+      APROWXX_INVALID_DF_STROKEDURATION1_ERR: 54  # Bad drag factor (specific)
+
+  # -----------------------------------------------------------------------
+  # APSMGEN — Application state machine errors
+  # -----------------------------------------------------------------------
+  APSMGEN:
+    description: "Application state machine errors"
+    errors:
+      APSMGEN_BUNDLE_STRUCT_INVALID: 2040  # PM5 BikeErg only
+      APSMGEN_SFE_DETECT_ERR: 2041  # PM5 BikeErg only
+      APSMGEN_INIT_ERR: 2042  # PM5 BikeErg only
+
+  # -----------------------------------------------------------------------
+  # APUTIL — Application utility errors
+  # -----------------------------------------------------------------------
+  APUTIL:
+    description: "Application utility errors"
+    errors:
+      APUTIL_INVALID_IMAGETYPE_ERR: 10100  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # BLE — BLE stack errors
+  # -----------------------------------------------------------------------
+  BLE:
+    description: "BLE stack errors"
+    errors:
+      BLE_ERROR_INVALID_CONN_HANDLE: 22289  # nRF422 only
+      BLE_ERROR_INVALID_ATTR_HANDLE: 22290  # nRF422 only
+      BLE_ERROR_NO_TX_BUFFERS: 22291  # nRF422 only
+
+  # -----------------------------------------------------------------------
+  # IOADCONV — I/O AD converter errors
+  # -----------------------------------------------------------------------
+  IOADCONV:
+    description: "I/O AD converter errors"
+    errors:
+      IOADCONV_BG_TIMEOUT_ERR: 810
+      IOADCONV_RESET_TIMEOUT_ERR: 811
+      IOADCONV_INVALID_CHAN_ERR: 812
+      IOADCONV_NOT_RDY_ERR: 813
+      IOADCONV_INVALID_REF_ERR: 814
+      IOADCONV_INIT_ADC_ERR: 815
+
+  # -----------------------------------------------------------------------
+  # IODIG — I/O digital errors
+  # -----------------------------------------------------------------------
+  IODIG:
+    description: "I/O digital errors"
+    errors:
+      IODIG_INVALID_IN_ERR: 950
+      IODIG_INVALID_IN_ERR__V2: 11625  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # IODMA — I/O DMA errors
+  # -----------------------------------------------------------------------
+  IODMA:
+    description: "I/O DMA errors"
+    errors:
+      IODMA_INVALID_MEM_CHAN_ERR: 820
+      IODMA_INVALID_IO_RQST_CHAN_ERR: 821
+      IODMA_INIT_DMA_ERR: 822
+      IODMA_QUEUE_FULL_ERR: 823
+      IODMA_INVALID_DMA_TYPE: 824
+      IODMA_DISABLE_TIMEOUT_ERR: 825
+
+  # -----------------------------------------------------------------------
+  # IOFLASH — I/O flash errors
+  # -----------------------------------------------------------------------
+  IOFLASH:
+    description: "I/O flash errors"
+    errors:
+      IOFLASH_ERASE_ERR: 11700  # PM5v2 only These errors are related to the radio 3rd party softdevice stack and are >= PM5v2 only unlikely to occur. 120
+
+  # -----------------------------------------------------------------------
+  # IOHDW — I/O hardware errors
+  # -----------------------------------------------------------------------
+  IOHDW:
+    description: "I/O hardware errors"
+    errors:
+      IOHDW_MEM_INVALID_CS_ERR: 830
+      IOHDW_INVALID_DMACLK_ERR: 831
+      IOHDW_INVALID_SYSCLK_ERR: 832
+      IOHDW_INVALID_PWRMODE_ERR: 833
+      IOHDW_MCUCLK_STARTUP_ERR: 834
+      IOHDW_BKUP_REG_ON_ERR: 835
+
+  # -----------------------------------------------------------------------
+  # IOI2C — I/O I2C errors
+  # -----------------------------------------------------------------------
+  IOI2C:
+    description: "I/O I2C errors"
+    errors:
+      IOI2C_NOACK_ERR: 840
+      IOI2C_INIT_WDR_TIMOUT_ERR: 841
+      IOI2C_INIT_XMIT_TIMOUT_ERR: 842
+      IOI2C_SEND_XMIT_TIMOUT_ERR: 843
+      IOI2C_GET_RECV_TIMOUT_ERR: 844
+      IOI2C_STOP_TIMEOUT_ERR: 845
+      IOI2C_WDR_TIMOUT_ERR: 846
+      IOI2C_INVALID_BAUD: 847
+      IOI2C_INVALID_CHANNEL_ERR: 848
+      IOI2C_BUSY_ERR: 849
+
+  # -----------------------------------------------------------------------
+  # IOLCD — I/O LCD errors
+  # -----------------------------------------------------------------------
+  IOLCD:
+    description: "I/O LCD errors"
+    errors:
+      IOLCD_DISPINIT_ERR: 860
+      IOLCD_INVALIDPARAM_ERR: 861
+      IOLCD_WRITE_SPI_TIMEOUT_ERR: 862
+      IOLCD_INVALID_ID_ERR: 863
+
+  # -----------------------------------------------------------------------
+  # IOMEM — I/O memory errors
+  # -----------------------------------------------------------------------
+  IOMEM:
+    description: "I/O memory errors"
+    errors:
+      IOMEM_FLASH_ERASE_TIMEOUT_ERR: 870
+      IOMEM_FLASH_WRITE_TIMEOUT_ERR: 871
+
+  # -----------------------------------------------------------------------
+  # IONORFLASH — I/O NOR flash errors
+  # -----------------------------------------------------------------------
+  IONORFLASH:
+    description: "I/O NOR flash errors"
+    errors:
+      IONORFLASH_INIT_ERR: 970
+      IONORFLASH_WRITE_ERR: 971
+      IONORFLASH_ERASE_ERR: 972
+      IONORFLASH_QUERY_ERR: 973
+
+  # -----------------------------------------------------------------------
+  # IORTCLOCK — I/O real-time clock errors
+  # -----------------------------------------------------------------------
+  IORTCLOCK:
+    description: "I/O real-time clock errors"
+    errors:
+      IORTCLOCK_WRITE_TIME_ERR: 880
+      IORTCLOCK_CRC_ERR: 881
+      IORTCLOCK_OSC_TIMEOUT_ERR: 882
+      IORTCLOCK_INIT_ERR: 883
+      IORTCLOCK_INIT_TIME_ERR: 884
+      IORTCLOCK_INIT_DATE_ERR: 885
+      IORTCLOCK_RTCSTOPPED_ERR: 886
+      IORTCLOCK_LSIOSC_TIMEOUT_ERR: 887
+      IORTCLOCK_HSEOSC_ERR: 888
+      IORTCLOCK_RTCUPDATE_TIMEOUT_ERR: 889
+
+  # -----------------------------------------------------------------------
+  # IOSCI — I/O serial communication errors
+  # -----------------------------------------------------------------------
+  IOSCI:
+    description: "I/O serial communication errors"
+    errors:
+      IOSCI_INVALID_PORT_ERR: 890
+      IOSCI_INVALID_BAUD_ERR: 891
+      IOSCI_INVALID_CNT_ERR: 892
+      IOSCI_INIT_PORT_ERR: 893
+      IOSCI_TXOVERRUN_ERR: 894
+      IOSCI_RXOVERRUN_ERR: 895
+      IOSCI_RXFRAME_ERR: 896
+      IOSCI_RXPARITY_ERR: 897
+      IOSCI_RXBREAK_ERR: 898
+      IOSCI_PDC_OVERRUN_ERR: 899
+      IOSCI_INVALID_MODE_ERR: 900
+      IOSCI_INVALID_PORT_ERR__V2: 11575  # PM5v2 only
+      IOSCI_INVALID_BAUD_ERR__V2: 11576  # PM5v2 only
+      IOSCI_INVALID_CNT_ERR__V2: 11577  # PM5v2 only
+      IOSCI_INIT_PORT_ERR__V2: 11578  # PM5v2 only
+      IOSCI_TXOVERRUN_ERR__V2: 11579  # PM5v2 only
+      IOSCI_RXOVERRUN_ERR__V2: 11580  # PM5v2 only
+      IOSCI_RXFRAME_ERR__V2: 11581  # PM5v2 only
+      IOSCI_RXPARITY_ERR__V2: 11582  # PM5v2 only
+      IOSCI_RXBREAK_ERR__V2: 11583  # PM5v2 only
+      IOSCI_PDC_OVERRUN_ERR__V2: 11584  # PM5v2 only
+      IOSCI_INVALID_MODE_ERR__V2: 11585  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # IOSPI — I/O SPI errors
+  # -----------------------------------------------------------------------
+  IOSPI:
+    description: "I/O SPI errors"
+    errors:
+      IOSPI_WRITE_TIMEOUT_ERR: 960
+      IOSPI_WRITE_FULL_TIMEOUT_ERR: 961
+      IOSPI_INVALID_CHANNEL_ERR: 962
+
+  # -----------------------------------------------------------------------
+  # IOTIMER — I/O timer errors
+  # -----------------------------------------------------------------------
+  IOTIMER:
+    description: "I/O timer errors"
+    errors:
+      IOTIMER_INVALID_TIMERID_ERR: 910
+      IOTIMER_INVALID_TIMERRATE_ERR: 911
+      IOTIMER_INVALID_TIMERID_ERR__V2: 11650  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # IOUSB — I/O USB errors
+  # -----------------------------------------------------------------------
+  IOUSB:
+    description: "I/O USB errors"
+    errors:
+      IOUSB_RST_TIMOUT_ERR: 930
+      IOUSB_CFG_TIMOUT_ERR: 931
+      IOUSB_CFG_ENDPT_ERR: 932
+      IOUSB_SETUP_ERR: 933
+      IOUSB_FIFO_RD_ERR: 934
+      IOUSB_NULL_PTR_ERR: 935
+      IOUSB_BUS_INIT_ERR: 936
+      IOUSB_TX_BUFFER_ERR: 937
+      IOUSB_EP_BUSY_ERR: 938
+      IOUSB_EP_INVALID_ERR: 939
+      IOUSB_WAKEUP_DISABLE_ERR: 940
+      IOUSB_BAD_FRAMENUM_ERR: 941
+      IOUSB_CFG_DEV_ERR: 942
+      IOUSB_BAD_IFCNUM_ERR: 943
+
+  # -----------------------------------------------------------------------
+  # IOUSER — I/O user interface errors
+  # -----------------------------------------------------------------------
+  IOUSER:
+    description: "I/O user interface errors"
+    errors:
+      IOUSER_SEMAPHORE_PEND_ERR: 920
+      IOUSER_SEMAPHORE_POST_ERR: 921
+
+  # -----------------------------------------------------------------------
+  # NRF — Nordic nRF SDK errors
+  # -----------------------------------------------------------------------
+  NRF:
+    description: "Nordic nRF SDK errors"
+    errors:
+      NRF_ERROR_SVC_HANDLER_MISSING: 10001  # nRF422 only
+      NRF_ERROR_SOFTDEVICE_NOT_ENABLED: 10002  # nRF422 only
+      NRF_ERROR_INTERNAL: 10003  # nRF422 only
+      NRF_ERROR_NO_MEM: 10004  # nRF422 only
+      NRF_ERROR_NOT_FOUND: 10005  # nRF422 only
+      NRF_ERROR_NOT_SUPPORTED: 10006  # nRF422 only
+      NRF_ERROR_INVALID_PARAM: 10007  # nRF422 only
+      NRF_ERROR_INVALID_STATE: 10008  # nRF422 only
+      NRF_ERROR_INVALID_LENGTH: 10009  # nRF422 only
+      NRF_ERROR_INVALID_FLAGS: 10010  # nRF422 only
+      NRF_ERROR_INVALID_DATA: 10011  # nRF422 only
+      NRF_ERROR_DATA_SIZE: 10012  # nRF422 only
+      NRF_ERROR_TIMEOUT: 10013  # nRF422 only
+      NRF_ERROR_NULL: 10014  # nRF422 only
+      NRF_ERROR_FORBIDDEN: 10015  # nRF422 only
+      NRF_ERROR_INVALID_ADDR: 10016  # nRF422 only
+      NRF_ERROR_BUSY: 10017  # nRF422 only
+      NRF_ERROR_SVC_HANDLER_MISSING__V2: 12001  # SVC handler is missing
+      NRF_ERROR_SOFTDEVICE_NOT_ENABLED__V2: 12002  # PM5v2 only 3rd party radio stack cannot be enabled. Possible oscillator problem
+      NRF_ERROR_INTERNAL__V2: 12003  # Internal Error
+      NRF_ERROR_NO_MEM__V2: 12004  # No Memory for operation
+      NRF_ERROR_NOT_FOUND__V2: 12005  # Not found
+      NRF_ERROR_NOT_SUPPORTED__V2: 12006  # Not supported
+      NRF_ERROR_INVALID_PARAM__V2: 12007  # Invalid Parameter
+      NRF_ERROR_INVALID_STATE__V2: 12008  # Invalid state
+      NRF_ERROR_INVALID_LENGTH__V2: 12009  # Invalid Length
+      NRF_ERROR_INVALID_FLAGS__V2: 12010  # Invalid Flags
+      NRF_ERROR_INVALID_DATA__V2: 12011  # Invalid Data
+      NRF_ERROR_DATA_SIZE__V2: 12012  # Invalid Data size
+      NRF_ERROR_TIMEOUT__V2: 12013  # Operation timed out
+      NRF_ERROR_NULL__V2: 12014  # Null Pointer
+      NRF_ERROR_FORBIDDEN__V2: 12015  # Forbidden Operation
+      NRF_ERROR_INVALID_ADDR__V2: 12016  # Bad Memory Address
+      NRF_ERROR_BUSY__V2: 12017  # Busy
+      NRF_ERROR_CONN_COUNT: 12018  # Maximum connection countexceeded
+      NRF_ERROR_RESOURCES: 12019  # Not enough resources for operation For any fixed duration workout or JustRow (no defined end) that is terminated prior t
+      NRF_ERROR_SDM_LFCLK_SOURCE_UNKNOWN: 14096  # nRF422 only
+      NRF_ERROR_SDM_INCORRECT_INTERRUPT_CONFIGURATION: 14097  # nRF422 only
+      NRF_ERROR_SDM_INCORRECT_CLENR0: 14098  # nRF422 only
+      NRF_ERROR_SOC_MUTEX_ALREADY_TAKEN: 18192  # nRF422 only
+      NRF_ERROR_SOC_NVIC_INTERRUPT_NOT_AVAILABLE: 18193  # nRF422 only
+      NRF_ERROR_SOC_NVIC_INTERRUPT_PRIORITY_NOT_ALLOWED: 18194  # nRF422 only
+      NRF_ERROR_SOC_NVIC_SHOULD_NOT_RETURN: 18195  # nRF422 only
+      NRF_ERROR_SOC_POWER_MODE_UNKNOWN: 18196  # nRF422 only
+      NRF_ERROR_SOC_POWER_POF_THRESHOLD_UNKNOWN: 18197  # nRF422 only
+      NRF_ERROR_SOC_POWER_OFF_SHOULD_NOT_RETURN: 18198  # nRF422 only
+      NRF_ERROR_SOC_RAND_NOT_ENOUGH_VALUES: 18199  # nRF422 only
+      NRF_ERROR_SOC_PPI_INVALID_CHANNEL: 18200  # nRF422 only
+      NRF_ERROR_SOC_PPI_INVALID_GROUP: 18201  # nRF422 only
+      NRF_L2CAP_ERR_BASE: 22544  # nRF422 only
+      NRF_GAP_ERR_BASE: 22800  # nRF422 only
+      NRF_GATTC_ERR_BASE: 23056  # nRF422 only
+      NRF_GATTS_ERR_BASE: 23312  # nRF422 only * Errors returned by Radio in PM5v2*
+
+  # -----------------------------------------------------------------------
+  # TKANTBLE — ANT/BLE task errors
+  # -----------------------------------------------------------------------
+  TKANTBLE:
+    description: "ANT/BLE task errors"
+    errors:
+      TKANTBLE_NOT_FOUND_ERR: 2200  # PM5v2 only:
+
+  # -----------------------------------------------------------------------
+  # TKCIPHER — Cipher task errors
+  # -----------------------------------------------------------------------
+  TKCIPHER:
+    description: "Cipher task errors"
+    errors:
+      TKCIPHER_NOT_BLOCK_MULT_ERR: 320
+
+  # -----------------------------------------------------------------------
+  # TKCMDPR — Command processing task errors
+  # -----------------------------------------------------------------------
+  TKCMDPR:
+    description: "Command processing task errors"
+    errors:
+      TKCMDPR_INVALID_RSP_ERR: 120  # Changed from 130 which was a duplicate (TKCMDPR_INVALID_MSGTYPE_ERR)
+      TKCMDPR_INVALID_CMD_ERR: 121
+      TKCMDPR_INVALID_CMD_ADDR_ERR: 122
+      TKCMDPR_INVALID_DEST_ADDR_ERR: 123
+      TKCMDPR_INVALID_DEST_INTF_ERR: 124
+      TKCMDPR_INVALID_INTF_ERR: 125
+      TKCMDPR_ROUTE_TABLE_FULL_ERR: 126
+      TKCMDPR_NO_DATA_AVAILABLE_ERR: 127
+      TKCMDPR_UNAUTHORIZED_CMD_ERR: 128
+      TKCMDPR_REFUSE_CMD_ERR: 129
+      TKCMDPR_INVALID_CMD_ERR__V2: 10525  # PM5v2 only
+      TKCMDPR_INVALID_CMD_ADDR_ERR__V2: 10526  # PM5v2 only
+      TKCMDPR_INVALID_INTF_ERR__V2: 10527  # PM5v2 only
+      TKCMDPR_INVALID_DEVTYPE_ERR: 10528  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKCMDSET — Command set task errors
+  # -----------------------------------------------------------------------
+  TKCMDSET:
+    description: "Command set task errors"
+    errors:
+      TKCMDSET_UNKNOWN_CMD_ERR: 10650  # PM5v2 only
+      TKCMDSET_NULL_ERR: 10651  # PM5v2 only
+      TKCMDSET_INVALID_CMD_PARAM_ERR: 10652  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKCRC — CRC task errors
+  # -----------------------------------------------------------------------
+  TKCRC:
+    description: "CRC task errors"
+    errors:
+      TKCRC_ERR: 300
+      TKCRC_LENGTH_ERR: 301
+
+  # -----------------------------------------------------------------------
+  # TKCSAFE — CSAFE protocol task errors
+  # -----------------------------------------------------------------------
+  TKCSAFE:
+    description: "CSAFE protocol task errors"
+    errors:
+      TKCSAFE_INVALID_CMD_ERR: 380
+      TKCSAFE_INVALID_WORKOUTNUM_ERR: 381
+      TKCSAFE_INVALID_PRECISION_ERR: 382
+      TKCSAFE_INVALID_FRAMETYPE_ERR: 383
+      TKCSAFE_INVALID_FRAMESIZE_ERR: 384
+
+  # -----------------------------------------------------------------------
+  # TKDATALOG — Data log task errors
+  # -----------------------------------------------------------------------
+  TKDATALOG:
+    description: "Data log task errors"
+    errors:
+      TKDATALOG_INIT_ERR: 130
+      TKDATALOG_DEVICE_INVALID_ERR: 131
+      TKDATALOG_CARD_INIT_ERR: 132
+      TKDATALOG_DEVICE_SIZE_ERR: 133
+      TKDATALOG_MULTI_STRUCT_ERR: 134
+      TKDATALOG_READ_ERR: 135
+      TKDATALOG_WRITE_ERR: 136
+      TKDATALOG_RECORDIDENTIFIER_ERR: 137
+      TKDATALOG_INSUFFMEM_ERR: 138
+      TKDATALOG_CARD_CORRUPT_ERR: 139
+
+  # -----------------------------------------------------------------------
+  # TKDEBUG — Debug task errors
+  # -----------------------------------------------------------------------
+  TKDEBUG:
+    description: "Debug task errors"
+    errors:
+      TKDEBUG_INIT_ERR: 2020
+
+  # -----------------------------------------------------------------------
+  # TKDFU — DFU (Device Firmware Update) task errors
+  # -----------------------------------------------------------------------
+  TKDFU:
+    description: "DFU (Device Firmware Update) task errors"
+    errors:
+      TKDFU_DATA_SIZE_ERR: 10890  # PM5v2 only
+      TKDFU_NOT_SUPPORTED_ERR: 10891  # PM5v2 only
+      TKDFU_INVALID_STATE_ERR: 10892  # PM5v2 only
+      TKDFU_INVALID_IMAGE_HDR_ERR: 10893  # PM5v2 only
+      TKDFU_NULL_ERR: 10894  # PM5v2 only
+      TKDFU_INVALID_APP_HDR_ERR: 10895  # PM5v2 only
+      TKDFU_INVALID_IMAGE_TYPE_ERR: 10896  # PM5v2 only
+      TKDFU_INVALID_IMAGE_INFO_ERR: 10897  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKDIAG — Diagnostic task errors
+  # -----------------------------------------------------------------------
+  TKDIAG:
+    description: "Diagnostic task errors"
+    errors:
+      TKDIAG_DIAGFAIL_ERR: 500
+      TKDIAG_FLSHFONTDIAG_BADHDRCRC_ERR: 501
+      TKDIAG_FLSHFONTDIAG_CRCCALC_ERR: 502
+      TKDIAG_FLSHFONTDIAG_BADFONTCRC_ERR: 503
+      TKDIAG_FLSHSCRNDIAG_BADHDRCRC_ERR: 510
+      TKDIAG_FLSHSCRNDIAG_CRCCALC_ERR: 511
+      TKDIAG_FLSHSCRNDIAG_BADSCRNCRC_ERR: 512
+      TKDIAG_FLSHAPPDIAG_BADHDRCRC_ERR: 520
+      TKDIAG_FLSHAPPDIAG_CRCCALC_ERR: 521
+      TKDIAG_FLSHAPPDIAG_BADAPPCRC_ERR: 522
+      TKDIAG_UARTDIAG_UART1_INIT_ERR: 530
+      TKDIAG_UARTDIAG_UART1_WRITE_ERR: 531
+      TKDIAG_UARTDIAG_UART1_READ_ERR: 532
+      TKDIAG_UARTDIAG_UART2_INIT_ERR: 533
+      TKDIAG_UARTDIAG_UART2_WRITE_ERR: 534
+      TKDIAG_UARTDIAG_UART2_READ_ERR: 535
+      TKDIAG_ADCONVDIAG_INIT_ERR: 540
+      TKDIAG_ADCONVDIAG_NOTREADY_ERR: 541
+      TKDIAG_ADCONVDIAG_ADCINPUT_ERR: 542
+      TKDIAG_SWUSERCONFIRM_ERR: 550
+      TKDIAG_SWSHORT_ERR: 551
+      TKDIAG_SW0_ERR: 552
+      TKDIAG_SW1_ERR: 553
+      TKDIAG_SW2_ERR: 554
+      TKDIAG_SW3_ERR: 555
+      TKDIAG_SW4_ERR: 556
+      TKDIAG_SW5_ERR: 557
+      TKDIAG_SW6_ERR: 558
+      TKDIAG_SW7_ERR: 559
+      TKDIAG_AMUXDIAG_NOTREADY_ERR: 560
+      TKDIAG_AMUXDIAG_ANALOGVREFCHAN_ERR: 561
+      TKDIAG_AMUXDIAG_ANALOGGNDCHAN_ERR: 562
+      TKDIAG_VSUPPLYDIAG_VEXPDIAG_ERR: 570  # PM3 only
+      TKDIAG_VSUPPLYDIAG_VBATDIAG_ERR: 570  # PM4 only
+      TKDIAG_VSUPPLYDIAG_GENINDIAG_ERR: 571  # PM3 only
+      TKDIAG_VSUPPLYDIAG_VNIMHDIAG_ERR: 571  # PM4 only
+      TKDIAG_VSUPPLYDIAG_GENINDIAG_ERR__V2: 571  # PM5 only
+      TKDIAG_VSUPPLYDIAG_VBATEXPDIAG_ERR: 572  # PM3 only
+      TKDIAG_VSUPPLYDIAG_GENINDIAG_ERR__V2: 572  # PM4 only
+      TKDIAG_VSUPPLYDIAG_VDDDIAG_ERR: 572  # PM5 only
+      TKDIAG_VSUPPLYDIAG_VBATPROTDIAG_ERR: 573  # PM3 only
+      TKDIAG_VSUPPLYDIAG_VEXPDIAG_ERR__V2: 573  # PM4 only
+      TKDIAG_VSUPPLYDIAG_VDUSBPROTDIAG_ERR: 573  # PM5 only
+      TKDIAG_VSUPPLYDIAG_VUSBDIAG_ERR: 574  # PM3 only
+      TKDIAG_VSUPPLYDIAG_VREFDIAG_ERR__V2: 574  # PM4 only
+      TKDIAG_VSUPPLYDIAG_VINPROTDIAG_ERR: 574  # PM5 only
+      TKDIAG_VSUPPLYDIAG_VREFDIAG_ERR: 575  # PM3 only
+      TKDIAG_VSUPPLYDIAG_EXPDIAG_ERR: 575  # PM4 only
+      TKDIAG_VSUPPLYDIAG_LCDBLADIAG_ERR: 575  # PM5 only Backlight voltage not proper. Firmware v15 may report this just after test rowing exits, in this case this can
+      TKDIAG_VSUPPLYDIAG_VBIASDIAG_ERR: 576  # PM3 only
+      TKDIAG_VSUPPLYDIAG_VSW_ERR: 576  # PM5 only
+      TKDIAG_VSUPPLYDIAG_VHUSBCLDIAG_ERR: 577  # PM5 only See case 3513. USB Flash Drive (host) port has experienced a Current Limit (overload) condition. - Is the usb d
+      TKDIAG_VSUPPLYDIAG_VUSBDIAG_ERR__V2: 578  # PM5 only The monitor is trying to make 5V for the USB Flash Drive port, and the 5v is not within specifications.
+      TKDIAG_EXTEEDIAG_RDDATA1_ERR: 580  # PM3 only
+      TKDIAG_EXTEEDIAG_INVALIDCRC1_ERR: 581  # PM3 only
+      TKDIAG_EXTEEDIAG_RDDATA2_ERR: 582  # PM3 only
+      TKDIAG_EXTEEDIAG_INVALIDCRC2_ERR: 583  # PM3 only
+      TKDIAG_EXTEEDIAG_WRDATA1_ERR: 584  # PM3 only
+      TKDIAG_EXTEEDIAG_RDDATA3_ERR: 584  # PM4 only
+      TKDIAG_EXTEEDIAG_WRDATA2_ERR: 585  # PM3 only
+      TKDIAG_EXTEEDIAG_INVALIDCRC3_ERR: 585  # PM4 only
+      TKDIAG_EXTEEDIAG_DATA1_ERR: 586  # PM3 only
+      TKDIAG_EXTEEDIAG_RDDATA4_ERR: 586  # PM4 only
+      TKDIAG_EXTEEDIAG_DATA2_ERR: 587  # PM3 only
+      TKDIAG_EXTEEDIAG_WRDATA1_ERR__V2: 587  # PM4 only
+      TKDIAG_EXTEEDIAG_WRDATA2_ERR__V2: 588  # PM4 only
+      TKDIAG_EXTEEDIAG_WRDATA3_ERR: 589  # PM4 only
+      TKDIAG_EXTEEDIAG_WRDATA4_ERR: 590  # PM4 only
+      TKDIAG_TACHDIAG_USERCONFIRM_ERR: 590  # PM3 only
+      TKDIAG_EXTEEDIAG_DATA1_ERR__V2: 591  # PM4 only
+      TKDIAG_TACHDIAG_TACHUNPLUG_ERR: 591  # PM3 only
+      TKDIAG_EXTEEDIAG_DATA2_ERR__V2: 592  # PM4 only
+      TKDIAG_TACHDIAG_TACHPLUG_ERR: 592  # PM3 only
+      TKDIAG_EXTEEDIAG_DATA3_ERR: 593  # PM4 only
+      TKDIAG_TACHDIAG_TACHSPINNING_ERR: 593  # PM3 only
+      TKDIAG_EXTEEDIAG_DATA4_ERR: 594  # PM4 only
+      TKDIAG_TACHDIAG_USERABORT_ERR: 594  # PM3 only
+      TKDIAG_TACHDIAG_USERCONFIRM_ERR__V2: 595  # PM4/PM5 only
+      TKDIAG_TACHDIAG_TACHUNPLUG_ERR__V2: 596  # PM4/PM5 only
+      TKDIAG_TACHDIAG_TACHPLUG_ERR__V2: 597  # PM4/PM5 only
+      TKDIAG_TACHDIAG_TACHSPINNING_ERR__V2: 598  # PM4/PM5 only
+      TKDIAG_TACHDIAG_USERABORT_ERR__V2: 599  # PM4/PM5 only
+      TKDIAG_HRTMONDIAG_USERCONFIRM_ERR: 600
+      TKDIAG_HRTMONDIAG_HRTUNPLUG_ERR: 601
+      TKDIAG_HRTMONDIAG_HRTPLUG_ERR: 602
+      TKDIAG_HRTMONDIAG_HRTACTIVE_ERR: 603
+      TKDIAG_HRTMONDIAG_USERABORT_ERR: 604
+      TKDIAG_GENINPUTDIAG_USERCONFIRM_ERR: 610
+      TKDIAG_GENINPUTDIAG_THRESHMAX_ERR: 611
+      TKDIAG_GENINPUTDIAG_THRESHMIN_ERR: 612
+      TKDIAG_GENINPUTDIAG_USERABORT_ERR: 613
+      TKDIAG_SCDIAG_USERCONFIRM_ERR: 620  # PM3/PM4 only
+      TKDIAG_SCDIAG_ILLEGALDETECT_ERR: 621  # PM3/PM4 only
+      TKDIAG_SCDIAG_DETECT_ERR: 622  # PM3/PM4 only
+      TKDIAG_SCDIAG_COMM_ERR: 623  # PM3/PM4 only
+      TKDIAG_SCDIAG_USERABORT_ERR: 624  # PM3/PM4 only
+      TKDIAG_EXPCFREG_NOTPRESENT_ERR: 660  # PM3 only
+      TKDIAG_EXPCFREG_LO_ERR: 661  # PM3 only
+      TKDIAG_EXPCFREG_HI_ERR: 662  # PM3 only
+      TKDIAG_EXPSTSLED_NOTPRESENT_ERR: 670  # PM3 only
+      TKDIAG_EXPFLASH_NOTPRESENT_ERR: 680  # PM3 only
+      TKDIAG_EXPFLASH_FILLNORMALDATA_ERR: 681  # PM3 only
+      TKDIAG_EXPFLASH_NORMALDATA_ERR: 682  # PM3 only
+      TKDIAG_EXPFLASH_FILLINVERTEDDATA_ERR: 683  # PM3 only
+      TKDIAG_EXPFLASH_INVERTEDDATA_ERR: 684  # PM3 only
+      TKDIAG_EXPSRAM_NOTPRESENT_ERR: 690  # PM3 only
+      TKDIAG_EXPSRAM_NORMALDATA_ERR: 691  # PM3 only
+      TKDIAG_EXPSRAM_INVERTEDDATA_ERR: 692  # PM3 only
+      TKDIAG_EXPEEDIAG_NOTPRESENT_ERR: 700  # PM3 only
+      TKDIAG_EXPEEDIAG_INVALIDCRC_ERR: 701  # PM3 only
+      TKDIAG_EXPEEDIAG_RDDATA1_ERR: 702  # PM3 only
+      TKDIAG_EXPEEDIAG_WRDATA1_ERR: 703  # PM3 only
+      TKDIAG_EXPEEDIAG_DATA1_ERR: 704  # PM3 only
+      TKDIAG_EXP232DIAG_NOTPRESENT_ERR: 710  # PM3 only
+      TKDIAG_EXP232DIAG_CONFIG_ERR: 711  # PM3 only
+      TKDIAG_EXP232DIAG_TXCHAR_ERR: 712  # PM3 only
+      TKDIAG_EXP232DIAG_LOOPBACK_TO_ERR: 713  # PM3 only
+      TKDIAG_EXP232DIAG_LOOPBACK_DATA_ERR: 714  # PM3 only
+      TKDIAG_EXP232DIAG_USERCONFIRM_ERR: 715  # PM3 only
+      TKDIAG_EXP232DIAGDIAG_USERABORT_ERR: 716  # PM3 only
+      TKDIAG_EXP485DIAG_NOTPRESENT_ERR: 720  # PM3 only
+      TKDIAG_EXP485DIAG_CONFIG_ERR: 721  # PM3 only
+      TKDIAG_EXP485DIAG_FORMATFRAME_ERR: 722  # PM3 only
+      TKDIAG_EXP485DIAG_SENDCMD_ERR: 723  # PM3 only
+      TKDIAG_EXP485DIAG_UNFORMATFRAME_ERR: 724  # PM3 only
+      TKDIAG_EXP485DIAG_USERCONFIRM_ERR: 725  # PM3 only
+      TKDIAG_EXP485DIAGDIAG_USERABORT_ERR: 726  # PM3 only
+      TKDIAG_EXP485DIAG_NORESPONSE_ERR: 727  # PM3 only
+      TKDIAG_EXPWIFIDIAG_NOTPRESENT_ERR: 730  # PM3 only
+      TKDIAG_EXPWIFIDIAG_CFINIT_ERR: 731  # PM3 only
+      TKDIAG_EXPWIFIDIAG_RECONFIG_ERR: 732  # PM3 only
+      TKDIAG_EXPWIFIDIAG_USERABORT_ERR: 733  # PM3 only
+      TKDIAG_EXPWIFIDIAG_DHCP_TO_ERR: 734  # PM3 only
+      TKDIAG_EXPWIFIDIAG_CFNOTPRESENT_ERR: 735  # PM3 only
+      TKDIAG_EXPWIFIDIAG_NOTAVAILABLE_ERR: 736  # PM3 only
+      TKDIAG_GPIOCFREG_NOTPRESENT_ERR: 740  # PM4 only
+      TKDIAG_GPIOCFREG_LO_ERR: 741  # PM4 only
+      TKDIAG_GPIOCFREG_HI_ERR: 742  # PM4 only
+      TKDIAG_STSLED_NOTPRESENT_ERR: 750
+      TKDIAG_ANTRFDIAG_NOTPRESENT_ERR: 760  # PM4 only
+      TKDIAG_RFDIAG_422CONFIG_ERR: 760  # PM5 only
+      TKDIAG_ANTRFDIAG_CONFIG_ERR: 761  # PM4 only
+      TKDIAG_RFDIAG_822CONFIG_ERR: 761  # PM5 only
+      TKDIAG_ANTRFDIAG_FORMATFRAME_ERR: 762  # PM4 only
+      TKDIAG_RFDIAG_USERABORT_ERR: 762  # PM5 only
+      TKDIAG_ANTRFDIAG_SENDCMD_ERR: 763  # PM4 only
+      TKDIAG_RFDIAG_422XMIT_822RECV_EXCESSERRORRATE_ERR: 763  # PM5 only
+      TKDIAG_ANTRFDIAG_UNFORMATFRAME_ERR: 764  # PM4 only
+      TKDIAG_RFDIAG_822XMIT_422RECV_EXCESSERRORRATE_ERR: 764  # PM5 only
+      TKDIAG_ANTRFDIAG_USERCONFIRM_ERR: 765  # PM4 only
+      TKDIAG_ANTRFDIAG_USERABORT_ERR: 766  # PM4 only
+      TKDIAG_ANTRFDIAG_NORESPONSE_ERR: 767  # PM4 only
+      TKDIAG_RS485DIAG_NOTPRESENT_ERR: 770
+      TKDIAG_RS485DIAG_CONFIG_ERR: 771
+      TKDIAG_RS485DIAG_FORMATFRAME_ERR: 772
+      TKDIAG_RS485DIAG_SENDCMD_ERR: 773
+      TKDIAG_RS485DIAG_UNFORMATFRAME_ERR: 774
+      TKDIAG_RS485DIAG_USERCONFIRM_ERR: 775
+      TKDIAG_RS485DIAG_USERABORT_ERR: 776
+      TKDIAG_RS485DIAG_NORESPONSE_ERR: 777
+      TKDIAG_RS485DIAG_TXCHAR_ERR: 778
+      TKDIAG_RS485DIAG_LOOPBACK_TO_ERR: 779  # Some of the pins in one or more of the RJ45 jacks are bent and touching each other. Inspect with a flashlight, and caref
+      TKDIAG_RS4852DIAG_LOOPBACK_DATA_ERR: 780
+      TKDIAG_RS4852DIAG_NOCABLECONNECT_ERR: 781
+      TKDIAG_SPIDFLASHDIAG_ERASE_ERR: 785  # PM5 only
+      TKDIAG_SPIDFLASHDIAG_WRITE_ERR: 786  # PM5 only
+      TKDIAG_SPIDFLASHDIAG_READ_ERR: 787  # PM5 only
+      TKDIAG_SPIDFLASHDIAG_READVERIFY_ERR: 788  # PM5 only
+      TKDIAG_SPIBFLASHDIAG_ERASE_ERR: 790  # PM5 only
+      TKDIAG_SPIBFLASHDIAG_WRITE_ERR: 791  # PM5 only
+      TKDIAG_SPIBFLASHDIAG_READ_ERR: 792  # PM5 only
+      TKDIAG_SPIBFLASHDIAG_READVERIFY_ERR: 793  # PM5 only
+      TKDIAG_TACHDIAG_MODELCSELECT_ERR: 800  # PM4/PM5 only
+      TKDIAG_TACHDIAG_MODELDSELECT_ERR: 801  # PM4/PM5 only
+      TKDIAG_TACHDIAG_PULSEEMULATE_ERR: 802  # PM4/PM5 only
+      TKDIAG_TACHDIAG_ADCRESULT_NOTREADY_ERR: 2500
+      TKDIAG_TACHDIAG_TACHDETECT_ERR: 2501
+      TKDIAG_TACHDIAG_TACHTEST_ERR: 2502
+
+  # -----------------------------------------------------------------------
+  # TKDIAGLOG — Diagnostic log task errors
+  # -----------------------------------------------------------------------
+  TKDIAGLOG:
+    description: "Diagnostic log task errors"
+    errors:
+      TKDIAGLOG_VIRTUALADDR_ERR: 2100
+      TKDIAGLOG_TBL_SEARCH_INVALID_ERR: 2101
+      TKDIAGLOG_LOGACCTBL_INVALID_ERR: 2102
+      TKDIAGLOG_LOGSTORAGE_FULL_ERR: 2103
+      TKDIAGLOG_WDACCTBLREC_INVALID_ERR: 2104
+      TKDIAGLOG_WDACCTBLREC_CRC_ERR: 2105
+      TKDIAGLOG_INVALID_LOGACCESSTBLINPTR_ERR: 2106
+      TKDIAGLOG_INVALIDLOGSIZE_ERR: 2107
+      TKDIAGLOG_LOGENTRYVALIDATE_ERR: 2108
+      TKDIAGLOG_INSUFFMEMORY_ERR: 2109
+
+  # -----------------------------------------------------------------------
+  # TKDISP — Display task errors
+  # -----------------------------------------------------------------------
+  TKDISP:
+    description: "Display task errors"
+    errors:
+      TKDISP_INVALID_CHAR_ERR: 140
+      TKDISP_INVALIDPARAM_ERR: 141
+      TKDISP_STRING_TOO_LONG_ERR: 142
+      TKDISP_STRING_TOO_HIGH_ERR: 143
+      TKDISP_INVALID_LANG_ERR: 144
+      TKDISP_UPDATE_TIMEOUT_ERR: 145
+
+  # -----------------------------------------------------------------------
+  # TKEEPROM — EEPROM task errors
+  # -----------------------------------------------------------------------
+  TKEEPROM:
+    description: "EEPROM task errors"
+    errors:
+      TKEEPROM_INIT_ERR: 150
+      TKEEPROM_ACK_ERR: 151
+      TKEEPROM_STOP_ERR: 152
+      TKEEPROM_INVALID_END_ADDR: 153
+      TKEEPROM_WRITE_TIMEOUT_ERR: 154
+      TKEEPROM_WRITE_READ_ERR: 155
+      TKEEPROM_WRITE_VERIFY_ERR: 156
+      TKEEPROM_CHKSM_READ_ERR: 157
+
+  # -----------------------------------------------------------------------
+  # TKERR — Error handling task errors
+  # -----------------------------------------------------------------------
+  TKERR:
+    description: "Error handling task errors"
+    errors:
+      TKERR_ECODE_DISCARDED_ERR: 10775  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKEXP — Export task errors
+  # -----------------------------------------------------------------------
+  TKEXP:
+    description: "Export task errors"
+    errors:
+      TKEXP_RS232_INVALID_ERR: 1000  # PM3 only
+      TKEXP_CF_NOTPRESENT_ERR: 1001  # PM3 only
+      TKEXP_CF_CIRQINVALID_ERR: 1002  # PM3 only
+      TKEXP_CF_CARDNOTREADY_ERR: 1003  # PM3 only
+      TKEXP_CF_MEMTEST_ERR: 1004  # PM3 only
+      TKEXP_CF_INVALIDSTATE_ERR: 1005  # PM3 only
+      TKEXP_CF_RFVENDORSTRING_ERR: 1006  # PM3 only
+      TKEXP_INVALIDLEDMODE_ERR: 1007  # PM3 only
+      TKEXP_INVALIDLEDCOLOR_ERR: 1008  # PM3 only
+
+  # -----------------------------------------------------------------------
+  # TKFILE — File system task errors
+  # -----------------------------------------------------------------------
+  TKFILE:
+    description: "File system task errors"
+    errors:
+      TKFILE_FILESYSTEM_ERR: 1840  # PM5 only
+      TKFILE_CREATE_SUBDIR_ERR: 1841  # PM5 only Cannot create folders on the USB Flash drive. Try another USB Stick. See if the drive is 'write protected' by u
+      TKFILE_FILE_OPEN_ERR: 1842  # PM5 only
+      TKFILE_FILE_SEEK_ERR: 1843  # PM5 only
+      TKFILE_GET_CURR_DIR_ERR: 1844  # PM5 only
+      TKFILE_GET_FREE_ERR: 1845  # PM5 only
+      TKFILE_CHANGE_DIR_ERR: 1846  # PM5 onlyProposed Error Text:'Change Folder.').
+      TKFILE_WRITEFILE_ERR: 1847  # PM5 only See below; or the USB flash drive could be 'write protected'. Proposed Error Text:'File Write Error. Is Flash D
+      TKFILE_READFILE_ERR: 1848  # PM5 only PM5 is trying to access a file on the USB flash driveand for some reason cannot read it. Could be bad flash dri
+      TKFILE_DELETE_ERR: 1849  # PM5 only Proposed Error Text:'File Delete error.').
+      TKFILE_OPEN_DIR_ERR: 1850  # PM5 only Could occur if the files or folders on the USB Flash Drive are corrupted. Scott has seen this once when the Con
+      TKFILE_FILESYSTEM_SEARCH_ERR: 1851  # PM5 only
+      TKFILE_FILE_CLOSE_ERR: 1852  # PM5 only
+      TKFILE_FILE_TOOSMALL_ERR: 1853  # PM5 only
+      TKFILE_DEVICE_WRITEPROTECTED_ERR: 1854  # PM5 only
+
+  # -----------------------------------------------------------------------
+  # TKFRAME — Frame task errors
+  # -----------------------------------------------------------------------
+  TKFRAME:
+    description: "Frame task errors"
+    errors:
+      TKFRAME_CSAFE_FRAME_STUFF_ERR: 160
+      TKFRAME_CSAFE_FRAME_CHKSM_ERR: 161  # Some device plugged into the USB or RJ45 Jack is not sending data correctly... ref case 3317 and also the PM3/4 error co
+      TKFRAME_NO_SCI_FRAME_ERR: 162
+      TKFRAME_NO_USB_FRAME_ERR: 163  # (ONLY IF NOT ALREADY TRAPPED): Proposed Error Text, No Translations:'Checksum Error in USB connection to computer. Contac
+      TKFRAME_CSAFE_INVALID_SHORT_CMD_ERR: 164  # (ONLY IF NOT ALREADY TRAPPED): Proposed Error Text, No Translations:'Invalid Short Command Error in USB connection to com
+      TKFRAME_CSAFE_INVALID_LONG_CMD_ERR: 165  # (ONLY IF NOT ALREADY TRAPPED): Proposed Error Text, No Translations:'Invalid Long Command Error in USB connection to comp
+      TKFRAME_CSAFE_FRAME_TOO_LONG_ERR: 166  # (ONLY IF NOT ALREADY TRAPPED): Proposed Error Text, No Translations:'Frame To Long Error in USB connection to computer. C
+      TKFRAME_NO_EXPRF_FRAME_ERR: 167
+      TKFRAME_CSAFE_INVALID_LONG_RSP_ERR: 168  # (ONLY IF NOT ALREADY TRAPPED): Proposed Error Text, No Translations:'Invalid Long Response Error in USB connection to com
+      TKFRAME_NO_LPBCK_FRAME_ERR: 169
+      TKFRAME_CSAFE_FRAME_TOO_LONG_ERR__V2: 10550  # PM5v2 only
+      TKFRAME_NOT_FOUND_ERR: 10551  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKHCI — HCI (Host Controller Interface) task errors
+  # -----------------------------------------------------------------------
+  TKHCI:
+    description: "HCI (Host Controller Interface) task errors"
+    errors:
+      TKHCI_INVALID_ADDR_ERR: 440
+      TKHCI_NOT_FOUND_ERR: 442
+      TKHCI_INVALID_ADDR_ERR__V2: 10725  # PM5v2 only
+      TKHCI_NOT_FOUND_ERR__V2: 10726  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKHDW — Hardware task errors
+  # -----------------------------------------------------------------------
+  TKHDW:
+    description: "Hardware task errors"
+    errors:
+      TKHDW_EVENT_BURST_STACK_OVF_ERR: 170
+      TKHDW_EVENT_BURST_STACK_UNF_ERR: 171
+      TKHDW_INVALIDLEDCOLOR_ERR: 172
+      TKHDW_INVALIDLEDMODE_ERR: 173
+      TKHDW_WORKOUT_LOG_ERR: 174
+      TKHDW_FLYWHEEL_SPINDOWN_ERR: 175
+      TKHDW_BATTFILT_INIT_ERR: 176
+
+  # -----------------------------------------------------------------------
+  # TKHRTMON — Heart rate monitor task errors
+  # -----------------------------------------------------------------------
+  TKHRTMON:
+    description: "Heart rate monitor task errors"
+    errors:
+      TKHRTMON_INVALID_NUM_MEAS_ERR: 180
+      TKHRTMON_TOO_FEW_MEAS_ERR: 181
+
+  # -----------------------------------------------------------------------
+  # TKLCD — LCD task errors
+  # -----------------------------------------------------------------------
+  TKLCD:
+    description: "LCD task errors"
+    errors:
+      TKLCD_WRITE_SPI_TIMEOUT_ERR: 410
+
+  # -----------------------------------------------------------------------
+  # TKMEM — Memory task errors
+  # -----------------------------------------------------------------------
+  TKMEM:
+    description: "Memory task errors"
+    errors:
+      TKMEM_INVALID_MEMTYPE_ERR: 200
+      TKMEM_INVALID_START_ADDR_ERR: 201
+      TKMEM_INVALID_END_ADDR_ERR: 202
+      TKMEM_FLASH_WRITE_ERR: 203
+      TKMEM_FLASH_ERASE_ERR: 204
+      TKMEM_INVALID_START_ADDR_ERR__V2: 10925  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKMSDLOG — MSD log task errors
+  # -----------------------------------------------------------------------
+  TKMSDLOG:
+    description: "MSD log task errors"
+    errors:
+      TKMSDLOG_TBL_SEARCH_INVALID_ERR: 1900  # PM5 only
+      TKMSDLOG_WDACCTBLREC_INVALID_ERR: 1901  # PM5 only
+      TKMSDLOG_WDACCTBLREC_CRC_ERR: 1902  # PM5 only
+      TKMSDLOG_DEVICE_NOTREADY_ERR: 1903  # PM5 only
+      TKMSDLOG_VIRTUALADDR_ERR: 1904  # PM5 only
+      TKMSDLOG_LOGSTROKEHDR_INVALID_ERR: 1905  # PM5 only
+      TKMSDLOG_LOGACCTBL_INVALID_ERR: 1906  # PM5 only
+      TKMSDLOG_DEVICELOGHDR_INVALID_ERR: 1907  # PM5 only It means that the Concept2\Logbook\DeviceLogInfo.bin file header structure is invalid. You should just be able
+      TKMSDLOG_LOGACCTBL_RECORDNUM_ERR: 1908
+
+  # -----------------------------------------------------------------------
+  # TKNRF — nRF radio task errors
+  # -----------------------------------------------------------------------
+  TKNRF:
+    description: "nRF radio task errors"
+    errors:
+      TKNRF_NOT_FOUND_ERR: 10960  # PM5v2 only
+      TKNRF_PEER_LIST_FULL_ERR: 10961  # PM5v2 only
+      TKNRF_INVALID_DEVINDEX_ERR: 10962  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKNRF422 — nRF422 task errors
+  # -----------------------------------------------------------------------
+  TKNRF422:
+    description: "nRF422 task errors"
+    errors:
+      TKNRF422_NOT_FOUND_ERR: 443
+      TKNRF422_RSP_TIMEOUT_ERR: 444  # TKNRF422_RADIO_SOC_ERR - DUPLICATE ENTRY 445
+      TKNRF422_RADIO_BASE_ERR: 446
+      TKNRF422_RADIO_SDM_ERR: 447
+      TKNRF422_RADIO_SOC_ERR: 448
+      TKNRF422_RADIO_STK_ERR: 449  # ALL of the above 443-449 errors indicate some problem with one of the wireless chips. Either this is an annoyance (comes
+      TKNRF422_NOT_FOUND_ERR__V2: 450
+      TKNRF422_RSP_TIMEOUT_ERR__V2: 451
+      TKNRF422_INIT_ERR: 452
+      TKNRF422_RADIO_BASE_ERR__V2: 453
+      TKNRF422_RADIO_SDM_ERR__V2: 454
+      TKNRF422_RADIO_SOC_ERR__V2: 455
+      TKNRF422_RADIO_STK_ERR__V2: 456
+      TKNRF422_RADIO_ANT_ERR: 457
+      TKNRF422_LDR_VER_ERR: 458
+      TKNRF422_APP_VER_ERR: 459
+
+  # -----------------------------------------------------------------------
+  # TKNRF422DM — nRF422 DM task errors
+  # -----------------------------------------------------------------------
+  TKNRF422DM:
+    description: "nRF422 DM task errors"
+    errors:
+      TKNRF422DM_NOT_FOUND_ERR: 2140
+      TKNRF422DM_PEER_LIST_FULL_ERR: 2141
+      TKNRF422DM_INVALID_DEVINDEX_ERR: 2142
+      TKNRF422DM_BOND_DATA_READ_ERR: 2143
+      TKNRF422DM_BOND_MODE_INVALID_ERR: 2144
+      TKNRF422DM_CLEAR_BOND_TYPE_INVALID_ERR: 2145
+      TKNRF422DM_WRITE_BOND_DATA_FULL_ERR: 2146
+      TKNRF422DM_CLEAR_BOND_DATA_ERR: 2147
+
+  # -----------------------------------------------------------------------
+  # TKNRF52 — nRF52 task errors
+  # -----------------------------------------------------------------------
+  TKNRF52:
+    description: "nRF52 task errors"
+    errors:
+      TKNRF52_ANT_INIT_ERR: 2220  # PM5v2 only : firmware UPDATING ERROR: After updating some monitors today (and also changing batteries), I found a few mo
+      TKNRF52_INVALID_CMD_ERR: 2221  # PM5v2 only
+      TKNRF52_NOT_FOUND_ERR: 2222  # PM5v2 only
+      TKNRF52_RSP_TIMEOUT_ERR: 2223  # PM5v2 only
+      TKNRF52_INIT_ERR: 2224  # PM5v2 only
+      TKNRF52_RADIO_BASE_ERR: 2225  # PM5v2 only
+      TKNRF52_RADIO_SDM_ERR: 2226  # PM5v2 only
+      TKNRF52_RADIO_SOC_ERR: 2227  # PM5v2 only
+      TKNRF52_RADIO_STK_ERR: 2228  # PM5v2 only
+      TKNRF52_RADIO_ANT_ERR: 2229  # PM5v2 only
+      TKNRF52_LDR_VER_ERR: 2230  # PM5v2 only
+      TKNRF52_APP_VER_ERR: 2231  # PM5v2 only
+      TKNRF52_NO_CONNECT_ERR: 2232  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKNRF822 — nRF822 task errors
+  # -----------------------------------------------------------------------
+  TKNRF822:
+    description: "nRF822 task errors"
+    errors:
+      TKNRF822_NOT_FOUND_ERR: 460
+      TKNRF822_RSP_TIMEOUT_ERR: 461
+      TKNRF822_INIT_ERR: 462
+      TKNRF822_RADIO_BASE_ERR: 463
+      TKNRF822_RADIO_SDM_ERR: 464
+      TKNRF822_RADIO_SOC_ERR: 465
+      TKNRF822_RADIO_STK_ERR: 466
+      TKNRF822_RADIO_ANT_ERR: 467
+      TKNRF822_LDR_VER_ERR: 468
+      TKNRF822_APP_VER_ERR: 469
+      TKNRF822_LIST_FULL_ERR: 470
+      TKNRF822_CONNECT_TIMEOUT_ERR: 471
+      TKNRF822_DISCONNECT_ERR: 472
+
+  # -----------------------------------------------------------------------
+  # TKNRFP — nRF peripheral task errors
+  # -----------------------------------------------------------------------
+  TKNRFP:
+    description: "nRF peripheral task errors"
+    errors:
+      TKNRFP_BOND_DATA_READ_ERR: 10970  # PM5v2 only
+      TKNRFP_BOND_MODE_INVALID_ERR: 10971  # PM5v2 only
+      TKNRFP_CLEAR_BOND_TYPE_INVALID_ERR: 10972  # PM5v2 only
+      TKNRFP_WRITE_BOND_DATA_FULL_ERR: 10973  # PM5v2 only
+      TKNRFP_CLEAR_BOND_DATA_ERR: 10974  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKRF — RF task errors
+  # -----------------------------------------------------------------------
+  TKRF:
+    description: "RF task errors"
+    errors:
+      TKRF_ILLEGAL_MSG_ERR: 390
+      TKRF_INVALID_CHAN_OPEN_ERR: 391
+      TKRF_MSG_OVERRUN_ERR: 392
+      TKRF_CHKSUM_ERR: 393
+      TKRF_ANT_RESPONSE_ERR: 394
+      TKRF_NO_FRAME_ERR: 395
+      TKRF_FRAME_OVERRUN_ERR: 396
+      TKRF_INVALID_CNT_ERR: 397
+      TKRF_BROADCAST_ERR: 398
+      TKRF_MSG_NOT_COMPLETE_ERR: 399
+      TKRF_NEXT_SENSOR_PACKET_ERR: 400
+      TKRF_ILLEGAL_PACKET_ENTRY_ERR: 401
+      TKRF_INVALID_DEVTYPE_ERR: 10800  # PM5v2 only
+      TKRF_UNSUPPORTED_DEVTYPE_ERR: 10801  # PM5v2 only
+      TKRF_INVALID_SCANMODE_ERR: 10802  # PM5v2 only
+      TKRF_INVALID_DISCOVER_DEVICE_ERR: 10803  # PM5v2 only
+      TKRF_MSG_OVERRUN_ERR__V2: 10804  # PM5v2 only
+      TKRF_FRAME_OVERRUN_ERR__V2: 10805  # PM5v2 only
+      TKRF_TX_POWER_ERR: 10806  # PM5v2 only
+      TKRF_INVALID_ADVERTISINGMODE_ERR: 10807  # PM5v2 only
+      TKRF_NULL_CMDDATA_ERR: 10808  # PM5v2 only
+      TKRF_NODATA_AVAIL_ERR: 10809  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKRFANT — RF ANT task errors
+  # -----------------------------------------------------------------------
+  TKRFANT:
+    description: "RF ANT task errors"
+    errors:
+      TKRFANT_FEC_INVALID_PAGE_ERR: 10850  # PM5v2 only
+      TKRFANT_FE_INVALID_PAGE_ERR: 10900  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKRFBLEC — RF BLE central task errors
+  # -----------------------------------------------------------------------
+  TKRFBLEC:
+    description: "RF BLE central task errors"
+    errors:
+      TKRFBLEC_HRM_NOT_FOUND_ERR: 10860  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKRFBLEP — RF BLE peripheral task errors
+  # -----------------------------------------------------------------------
+  TKRFBLEP:
+    description: "RF BLE peripheral task errors"
+    errors:
+      TKRFBLEP_ROW_ADV_LEN_ERR: 10870  # PM5v2 only
+      TKRFBLEP_ROW_INVALID_CNT_ERR: 10871  # PM5v2 only
+      TKRFBLEP_ROW_RX_OVERRUN_ERR: 10872  # PM5v2 only
+      TKRFBLEP_ROW_TX_OVERRUN_ERR: 10873  # PM5v2 only
+      TKRFBLEP_ROW_INVALID_STATE_ERR: 10874  # PM5v2 only
+      TKRFBLEP_ROW_INVALID_CHARACTERISTIC_ERR: 10875  # PM5v2 only
+      TKRFBLEP_ROW_ROWINGDATA_SIZE_ERR: 10876  # PM5v2 only
+      TKRFBLEP_ROW_ROWDATA_TX_OVERRUN_ERR: 10877  # PM5v2 only This error is reported only if an Ergdata connection is active. Can occur if the BLE is being compromised by
+
+  # -----------------------------------------------------------------------
+  # TKRFPKT — RF packet task errors
+  # -----------------------------------------------------------------------
+  TKRFPKT:
+    description: "RF packet task errors"
+    errors:
+      TKRFPKT_NOT_FOUND_ERR: 480
+      TKRFPKT_RSP_TIMEOUT_ERR: 481
+      TKRFPKT_INVALID_INTF_ERR: 482
+      TKRFPKT_RXOVERRUN_ERR: 483
+      TKRFPKT_INVALID_CNT_ERR: 484
+      TKRFPKT_INIT_PORT_ERR: 485
+      TKRFPKT_ANT422_RSP_TIMEOUT_ERR: 486
+      TKRFPKT_BLE422_RSP_TIMEOUT_ERR: 487
+      TKRFPKT_BLE822_RSP_TIMEOUT_ERR: 488
+
+  # -----------------------------------------------------------------------
+  # TKRTTIMER — Real-time timer task errors
+  # -----------------------------------------------------------------------
+  TKRTTIMER:
+    description: "Real-time timer task errors"
+    errors:
+      TKRTTIMER_INVALID_MONTH_ERR: 210
+      TKRTTIMER_INVALID_DAY_ERR: 211
+      TKRTTIMER_INVALID_TIMER_NUM_ERR: 212
+      TKRTTIMER_INVALID_TIMER_MODE_ERR: 213
+
+  # -----------------------------------------------------------------------
+  # TKSCI — Serial communication task errors
+  # -----------------------------------------------------------------------
+  TKSCI:
+    description: "Serial communication task errors"
+    errors:
+      TKSCI_INVALID_PORT_ERR: 220
+      TKSCI_TX_SEND_ERR: 221
+      TKSCI_RX_TIMEOUT_ERR: 222
+      TKSCI_INVALID_PORT_ERR__V2: 10600  # PM5v2 only
+      TKSCI_TX_SEND_ERR__V2: 10601  # PM5v2 only
+      TKSCI_RX_TIMEOUT_ERR__V2: 10602  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKSCRN — Screen task errors
+  # -----------------------------------------------------------------------
+  TKSCRN:
+    description: "Screen task errors"
+    errors:
+      TKSCRN_INVALID_SPECFUNCTYPE: 230
+      TKSCRN_ILLEGAL_SPLITDURATION: 231
+
+  # -----------------------------------------------------------------------
+  # TKSLIP — SLIP protocol task errors
+  # -----------------------------------------------------------------------
+  TKSLIP:
+    description: "SLIP protocol task errors"
+    errors:
+      TKSLIP_INVALID_PORT_ERR: 430
+      TKSLIP_NOT_FOUND_ERR: 431
+      TKSLIP_INVALID_ADDR_ERR: 432
+      TKSLIP_INVALID_PORT_ERR__V2: 10700  # PM5v2 only
+      TKSLIP_NOT_FOUND_ERR__V2: 10701  # PM5v2 only
+      TKSLIP_INVALID_ADDR_ERR__V2: 10702  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKSMCD — State machine card task errors
+  # -----------------------------------------------------------------------
+  TKSMCD:
+    description: "State machine card task errors"
+    errors:
+      TKSMCD_ACK_ERR: 240
+      TKSMCD_STOP_ERR: 241
+      TKSMCD_INVALID_END_ADDR: 242
+      TKSMCD_WRITE_TIMEOUT_ERR: 243
+      TKSMCD_WRITE_READ_ERR: 244
+      TKSMCD_WRITE_VERIFY_ERR: 245
+      TKSMCD_CHKSM_READ_ERR: 246
+      TKSMCD_ACK_ERR_WRITE: 247
+
+  # -----------------------------------------------------------------------
+  # TKSPIFLASH — SPI flash task errors
+  # -----------------------------------------------------------------------
+  TKSPIFLASH:
+    description: "SPI flash task errors"
+    errors:
+      TKSPIFLASH_INVALID_ID_ERR: 1820  # PM5 only
+      TKSPIFLASH_PAGE_BOUNDARY_ERR: 1821  # PM5 only
+      TKSPIFLASH_ERASE_MODE_ERR: 1822  # PM5 only
+      TKSPIFLASH_WRITEVERIFY_ERR: 1823  # PM5 only
+
+  # -----------------------------------------------------------------------
+  # TKSPILOG — SPI log task errors
+  # -----------------------------------------------------------------------
+  TKSPILOG:
+    description: "SPI log task errors"
+    errors:
+      TKSPILOG_TBL_SEARCH_INVALID_ERR: 1880  # PM5 only
+      TKSPILOG_WDACCTBLREC_INVALID_ERR: 1881  # PM5 only Something is messed up in the internal 'memory', so you can try the C2 Utility to 'transfer memory to logbook'
+      TKSPILOG_WDACCTBLREC_CRC_ERR: 1882  # PM5 only
+      TKSPILOG_NOTREADY_ERR: 1883  # PM5 only
+      TKSPILOG_LOGSTROKEHDR_INVALID_ERR: 1884  # PM5 only
+      TKSPILOG_LOGACCTBL_INVALID_ERR: 1885  # PM5 only
+      TKSPILOG_LOGDATASTORAGE_FULL_ERR: 1886  # PM5 only
+
+  # -----------------------------------------------------------------------
+  # TKSTRUCT — Structure task errors
+  # -----------------------------------------------------------------------
+  TKSTRUCT:
+    description: "Structure task errors"
+    errors:
+      TKSTRUCT_MULTI_STRUCT_ERR: 10950  # PM5v2 only
+
+  # -----------------------------------------------------------------------
+  # TKTACH — Tachometer task errors
+  # -----------------------------------------------------------------------
+  TKTACH:
+    description: "Tachometer task errors"
+    errors:
+      TKTACH_INVALID_NUM_MEAS_ERR: 250
+      TKTACH_TOO_FEW_MEAS_ERR: 251
+
+  # -----------------------------------------------------------------------
+  # TKTIME — Time task errors
+  # -----------------------------------------------------------------------
+  TKTIME:
+    description: "Time task errors"
+    errors:
+      TKTIME_INVALID_MONTH_ERR: 260
+      TKTIME_INVALID_DAY_ERR: 261
+
+  # -----------------------------------------------------------------------
+  # TKUSB — USB task errors
+  # -----------------------------------------------------------------------
+  TKUSB:
+    description: "USB task errors"
+    errors:
+      TKUSB_BAD_DESC_RQT_ERR: 330
+      TKUSB_INVALID_EPNUM_ERR: 331
+      TKUSB_RX_TIMEOUT_ERR: 332
+      TKUSB_EPNUM_RX_OVERRUN: 333
+      TKUSB_INIT_EPNUM_ERR: 334
+      TKUSB_GET_RX_CHAR_ERR: 335
+      TKUSB_BUS_DISABLE_ERR: 336
+      TKUSB_BUS_RESET_ERR: 337
+      TKUSB_NO_FEATURE_REPORT_ERR: 338
+      TKUSB_INVALID_STRING_ID_ERR: 339
+      TKUSB_EP_TX_OVERRUN_ERR: 340
+      TKUSB_INVALID_TX_LEN_ERR: 341
+      TKUSB_HOST_CURRFAULT_ERR: 342
+      TKUSB_HOST_UNSUPPORTEDDEV_ERR: 343
+      TKUSB_DEVICE_VOLTFAULT_ERR: 344
+      TKUSB_HOST_INVALIDPWRCTLMODE_ERR: 345
+
+  # -----------------------------------------------------------------------
+  # TKUSER — User task errors
+  # -----------------------------------------------------------------------
+  TKUSER:
+    description: "User task errors"
+    errors:
+      TKUSER_INIT_ERR: 260  # .

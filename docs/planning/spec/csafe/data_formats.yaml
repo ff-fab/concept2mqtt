@@ -1,0 +1,1164 @@
+# PM5 BLE Data Format Definitions
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25
+# Sections: Table 14 (pp13-29), Table 15 (pp30-45)
+#
+# These define the byte-level wire format for each BLE notification characteristic.
+# Use these to build struct.unpack() calls or equivalent parsers.
+#
+# Cross-reference files:
+#   - docs/planning/spec/csafe/ble_services.yaml         (per-byte field definitions)
+#
+# Conventions:
+#   - All multi-byte integers are little-endian unless stated otherwise.
+#   - struct_format uses Python struct module notation (< = little-endian).
+#   - 3-byte (uint24) values use HB in the struct: H reads the low 2 bytes as
+#     uint16_le, B reads the high byte. Combine as: (hi << 16) | lo.
+#   - Field 'bytes' is the wire size; 'offset' is 0-based byte position.
+
+# ---------------------------------------------------------------------------
+# Common data encoding patterns used across multiple characteristics
+# ---------------------------------------------------------------------------
+common_encodings:
+  uint24_le:
+    description: "24-bit unsigned integer, little-endian across 3 bytes"
+    wire_bytes: 3
+    struct_hint: "<HB"
+    combine: "(hi_byte << 16) | uint16_lo"
+    note: >
+      The low 2 bytes are read as uint16_le, the 3rd byte is the high byte.
+      This pattern is used for elapsed_time, distance, rest_time, etc.
+
+  elapsed_time:
+    description: "Elapsed time in 0.01 sec units, across 3 bytes"
+    wire_bytes: 3
+    encoding: uint24_le
+    lsb_unit: 0.01
+    lsb_unit_label: "seconds"
+    max_value: 167772.15
+    max_label: "~46.6 hours"
+    struct_hint: "<HB"
+    python_decode: "(hi << 16) | lo  # result in centiseconds; divide by 100 for seconds"
+
+  distance:
+    description: "Distance in 0.1 meter units, across 3 bytes"
+    wire_bytes: 3
+    encoding: uint24_le
+    lsb_unit: 0.1
+    lsb_unit_label: "meters"
+    max_value: 1677721.5
+    max_label: "~1677 km"
+    struct_hint: "<HB"
+    python_decode: "(hi << 16) | lo  # result in decimeters; divide by 10 for meters"
+
+  concept2_date:
+    description: "Concept2 packed date+time format, 4 bytes"
+    wire_bytes: 4
+    struct_hint: "<HBB"
+    fields:
+      - name: packed_date
+        bytes: 2
+        type: uint16_le
+        bitfields:
+          - name: month
+            bits: "3:0"
+            mask: "0x0F"
+            description: "Month (1-12), lowest 4 bits"
+          - name: day
+            bits: "8:4"
+            mask: "0x1F0 >> 4"
+            description: "Day (1-31), next 5 bits"
+          - name: year_offset
+            bits: "15:9"
+            mask: "0xFE00 >> 9"
+            description: "Year offset from 2000, upper 7 bits"
+      - name: minutes
+        bytes: 1
+        type: uint8
+      - name: hours
+        bytes: 1
+        type: uint8
+    python_decode: |
+      date_word, minutes, hours = struct.unpack('<HBB', data[0:4])
+      month = date_word & 0x0F
+      day   = (date_word >> 4) & 0x1F
+      year  = ((date_word >> 9) & 0x7F) + 2000
+    cross_ref:
+      c2bluetooth: "extensions.dart Concept2DateExtension.fromBytes()"
+
+  pace_500m:
+    description: "Pace per 500m in 0.01 sec or 0.1 sec units, 2 bytes"
+    wire_bytes: 2
+    encoding: uint16_le
+    struct_hint: "<H"
+    note: >
+      Unit varies by characteristic: general rowing uses 0.01 sec,
+      summary/split data uses 0.1 sec. Check field-level unit.
+
+# ---------------------------------------------------------------------------
+# Characteristic data layouts (Table 14 — individual BLE characteristics)
+# ---------------------------------------------------------------------------
+characteristics:
+  # -------------------------------------------------------------------------
+  general_status:
+    uuid_suffix: "0x0031"
+    name: "C2 Rowing General Status"
+    total_bytes: 19
+    update_rate: "500ms default (configurable via 0x0034: 0=1s, 1=500ms, 2=250ms, 3=100ms)"
+    struct_format: "<HBHBBBBBBHBHBBB"
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time. Combine: (byte2 << 16) | uint16(byte0,byte1)."
+      - name: distance
+        offset: 3
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 m"
+        description: "Distance covered. Combine: (byte5 << 16) | uint16(byte3,byte4)."
+      - name: workout_type
+        offset: 6
+        bytes: 1
+        type: uint8
+        enum: WorkoutType
+        csafe_cmd: CSAFE_PM_GET_WORKOUTTYPE
+        description: "Workout type enumeration (0-12). See enums.yaml."
+      - name: interval_type
+        offset: 7
+        bytes: 1
+        type: uint8
+        enum: IntervalType
+        csafe_cmd: CSAFE_PM_GET_INTERVALTYPE
+        description: "Interval type. Changes based on work/rest phase."
+      - name: workout_state
+        offset: 8
+        bytes: 1
+        type: uint8
+        enum: WorkoutState
+        csafe_cmd: CSAFE_PM_GET_WORKOUTSTATE
+        description: "Current workout state."
+      - name: rowing_state
+        offset: 9
+        bytes: 1
+        type: uint8
+        enum: RowingState
+        csafe_cmd: CSAFE_PM_GET_ROWINGSTATE
+        description: "Current rowing state."
+      - name: stroke_state
+        offset: 10
+        bytes: 1
+        type: uint8
+        enum: StrokeState
+        csafe_cmd: CSAFE_PM_GET_STROKESTATE
+        description: "Current stroke state."
+      - name: total_work_distance
+        offset: 11
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 m"
+        csafe_cmd: CSAFE_PM_GET_WORKDISTANCE
+        description: "Total work distance. Combine: (byte13 << 16) | uint16(byte11,byte12)."
+      - name: workout_duration
+        offset: 14
+        bytes: 3
+        type: uint24_le
+        unit: "depends on workout_duration_type"
+        description: >
+          Workout duration target. Unit depends on workout_duration_type:
+          time-based = 0.01 sec, distance-based = 0.1 m.
+          Combine: (byte16 << 16) | uint16(byte14,byte15).
+      - name: workout_duration_type
+        offset: 17
+        bytes: 1
+        type: uint8
+        description: "0 = time-based duration, 1 = distance-based duration."
+      - name: drag_factor
+        offset: 18
+        bytes: 1
+        type: uint8
+        description: "Current drag factor."
+    cross_ref:
+      pROWess: >
+        main.py decodeRowingStatus() — struct.unpack('<HBHBBBBBBHBHBBB', val).
+        Maps vals[0]+vals[1] → ElapsedTime, vals[2]+vals[3] → Distance,
+        vals[4] → WorkoutType, vals[5] → IntervalType, vals[6] → WorkoutState,
+        vals[7] → RowingState, vals[8] → StrokeState, vals[9]+vals[10] → TotalDistance,
+        vals[11]+vals[12] → Duration, vals[13] → DurationType, vals[14] → DragFactor.
+
+  # -------------------------------------------------------------------------
+  additional_status_1:
+    uuid_suffix: "0x0032"
+    name: "C2 Rowing Additional Status 1"
+    total_bytes: 17
+    update_rate: "500ms default (same as general_status)"
+    struct_format: "<HBHBBHHHHBB"
+    note: >
+      Spec Table 15 lists 19 bytes for the multiplexed version, adding
+      average_power (2 bytes) before erg_machine_type. The individual BLE
+      characteristic as implemented in pROWess and c2bluetooth is 17 bytes.
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: speed
+        offset: 3
+        bytes: 2
+        type: uint16_le
+        unit: "0.001 m/s"
+        csafe_cmd: CSAFE_GETSPEED_CMD
+        description: "Current speed in millimeters per second."
+      - name: stroke_rate
+        offset: 5
+        bytes: 1
+        type: uint8
+        unit: "strokes/min"
+        csafe_cmd: CSAFE_PM_GET_STROKERATE
+        description: "Current stroke rate."
+      - name: heartrate
+        offset: 6
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        csafe_cmd: CSAFE_PM_GET_AVG_HEARTRATE
+        description: "Heart rate in bpm. 255 = invalid/no belt."
+      - name: current_pace
+        offset: 7
+        bytes: 2
+        type: uint16_le
+        unit: "0.01 s/500m"
+        csafe_cmd: CSAFE_PM_GET_STROKE_500MPACE
+        description: "Current pace per 500m in centiseconds."
+      - name: average_pace
+        offset: 9
+        bytes: 2
+        type: uint16_le
+        unit: "0.01 s/500m"
+        csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_500MPACE
+        description: "Average pace per 500m in centiseconds."
+      - name: rest_distance
+        offset: 11
+        bytes: 2
+        type: uint16_le
+        unit: "meters"
+        csafe_cmd: CSAFE_PM_GET_RESTDISTANCE
+        description: "Rest distance remaining."
+      - name: rest_time
+        offset: 13
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        csafe_cmd: CSAFE_PM_GET_RESTTIME
+        description: "Rest time remaining. Combine: (byte15 << 16) | uint16(byte13,byte14)."
+      - name: erg_machine_type
+        offset: 16
+        bytes: 1
+        type: uint8
+        description: "Erg Machine Type enum (see Appendix)."
+    cross_ref:
+      pROWess: >
+        main.py decodeRowingStatus1() — struct.unpack('<HBHBBHHHBHB', val).
+        Note: pROWess uses BH grouping for rest_time (vals[8]=B, vals[9]=H),
+        then combines as (vals[9] << 16) + vals[8]. This produces incorrect
+        byte ordering for rest_time values > 255. The correct grouping is HB
+        as used in struct_format above.
+
+  # -------------------------------------------------------------------------
+  additional_status_2:
+    uuid_suffix: "0x0033"
+    name: "C2 Rowing Additional Status 2"
+    total_bytes: 20
+    struct_format: "<HBBHHHHHHBHB"
+    note: >
+      Table 15 multiplexed version is 18 bytes (omits average_power).
+      The individual BLE characteristic (Table 14) includes average_power
+      for a total of 20 bytes.
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: interval_count
+        offset: 3
+        bytes: 1
+        type: uint8
+        csafe_cmd: CSAFE_PM_GET_WORKOUTINTERVALCOUNT
+        description: "Number of completed intervals."
+      - name: average_power
+        offset: 4
+        bytes: 2
+        type: uint16_le
+        unit: "watts"
+        csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_POWER
+        description: "Total average power in watts."
+      - name: total_calories
+        offset: 6
+        bytes: 2
+        type: uint16_le
+        unit: "calories"
+        csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_CALORIES
+        description: "Total calories burned."
+      - name: split_avg_pace
+        offset: 8
+        bytes: 2
+        type: uint16_le
+        unit: "0.01 s/500m"
+        csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_500MPACE
+        description: "Split/interval average pace per 500m."
+      - name: split_avg_power
+        offset: 10
+        bytes: 2
+        type: uint16_le
+        unit: "watts"
+        csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_POWER
+        description: "Split/interval average power."
+      - name: split_avg_calories
+        offset: 12
+        bytes: 2
+        type: uint16_le
+        unit: "calories/hr"
+        csafe_cmd: CSAFE_PM_GET_SPLIT_AVG_CALORIES
+        description: "Split/interval average caloric burn rate."
+      - name: last_split_time
+        offset: 14
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 s"
+        csafe_cmd: CSAFE_PM_GET_LAST_SPLITTIME
+        description: "Last completed split time in deciseconds."
+      - name: last_split_distance
+        offset: 17
+        bytes: 3
+        type: uint24_le
+        unit: "meters"
+        csafe_cmd: CSAFE_PM_GET_LAST_SPLITDISTANCE
+        description: "Last completed split distance in meters."
+
+  # -------------------------------------------------------------------------
+  stroke_data:
+    uuid_suffix: "0x0035"
+    name: "C2 Rowing Stroke Data"
+    total_bytes: 20
+    struct_format: "<HBHBBBHHHHHH"
+    note: >
+      Table 15 multiplexed version is 18 bytes (omits work_per_stroke;
+      work_per_stroke appears in 0x0036 multiplexed instead).
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: distance
+        offset: 3
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 m"
+        description: "Distance covered."
+      - name: drive_length
+        offset: 6
+        bytes: 1
+        type: uint8
+        unit: "0.01 m"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Drive length. Max 2.55 m."
+      - name: drive_time
+        offset: 7
+        bytes: 1
+        type: uint8
+        unit: "0.01 s"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Drive time. Max 2.55 sec."
+      - name: stroke_recovery_time
+        offset: 8
+        bytes: 2
+        type: uint16_le
+        unit: "0.01 s"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Stroke recovery time. Max 655.35 sec."
+      - name: stroke_distance
+        offset: 10
+        bytes: 2
+        type: uint16_le
+        unit: "0.01 m"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Distance per stroke. Max 655.35 m."
+      - name: peak_drive_force
+        offset: 12
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 lbs"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Peak drive force. Max 6553.5 lbs."
+      - name: average_drive_force
+        offset: 14
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 lbs"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Average drive force. Max 6553.5 lbs."
+      - name: work_per_stroke
+        offset: 16
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 J"
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Work per stroke. Max 6553.5 Joules."
+      - name: stroke_count
+        offset: 18
+        bytes: 2
+        type: uint16_le
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Cumulative stroke count."
+
+  # -------------------------------------------------------------------------
+  additional_stroke_data:
+    uuid_suffix: "0x0036"
+    name: "C2 Rowing Additional Stroke Data"
+    total_bytes: 15
+    struct_format: "<HBHHHHBHB"
+    note: >
+      Table 15 multiplexed version is 17 bytes, adding work_per_stroke (2 bytes)
+      at the end. In Table 14 (individual characteristic), work_per_stroke is
+      in 0x0035 instead.
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: stroke_power
+        offset: 3
+        bytes: 2
+        type: uint16_le
+        unit: "watts"
+        csafe_cmd: CSAFE_PM_GET_STROKE_POWER
+        description: "Instantaneous stroke power."
+      - name: stroke_calories
+        offset: 5
+        bytes: 2
+        type: uint16_le
+        unit: "calories/hr"
+        csafe_cmd: CSAFE_PM_GET_STROKE_CALORICBURNRATE
+        description: "Instantaneous caloric burn rate."
+      - name: stroke_count
+        offset: 7
+        bytes: 2
+        type: uint16_le
+        csafe_cmd: CSAFE_PM_GET_STROKESTATS
+        description: "Cumulative stroke count."
+      - name: projected_work_time
+        offset: 9
+        bytes: 3
+        type: uint24_le
+        unit: "seconds"
+        description: "Projected total work time."
+      - name: projected_work_distance
+        offset: 12
+        bytes: 3
+        type: uint24_le
+        unit: "meters"
+        description: "Projected total work distance."
+
+  # -------------------------------------------------------------------------
+  split_interval_data:
+    uuid_suffix: "0x0037"
+    name: "C2 Rowing Split/Interval Data"
+    total_bytes: 18
+    struct_format: "<HBHBHBHBHHBB"
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: distance
+        offset: 3
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 m"
+        description: "Total distance at split/interval boundary."
+      - name: split_interval_time
+        offset: 6
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 s"
+        description: "Split/interval duration in deciseconds."
+      - name: split_interval_distance
+        offset: 9
+        bytes: 3
+        type: uint24_le
+        unit: "1 m"
+        description: "Split/interval distance in meters."
+      - name: interval_rest_time
+        offset: 12
+        bytes: 2
+        type: uint16_le
+        unit: "1 s"
+        description: "Interval rest time in whole seconds."
+      - name: interval_rest_distance
+        offset: 14
+        bytes: 2
+        type: uint16_le
+        unit: "1 m"
+        description: "Interval rest distance in whole meters."
+      - name: split_interval_type
+        offset: 16
+        bytes: 1
+        type: uint8
+        description: >
+          Split/interval type. Changes based on work/rest phase.
+          Use workout_type to determine time vs distance intervals.
+      - name: split_interval_number
+        offset: 17
+        bytes: 1
+        type: uint8
+        description: "Split/interval sequence number."
+
+  # -------------------------------------------------------------------------
+  additional_split_interval_data:
+    uuid_suffix: "0x0038"
+    name: "C2 Rowing Additional Split/Interval Data"
+    total_bytes: 19
+    struct_format: "<HBBBBHHHHHBBB"
+    fields:
+      - name: elapsed_time
+        offset: 0
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Elapsed workout time."
+      - name: split_interval_avg_stroke_rate
+        offset: 3
+        bytes: 1
+        type: uint8
+        unit: "strokes/min"
+        description: "Average stroke rate for this split/interval."
+      - name: split_interval_work_heartrate
+        offset: 4
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Work-phase heart rate for this split/interval."
+      - name: split_interval_rest_heartrate
+        offset: 5
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Rest-phase heart rate for this split/interval."
+      - name: split_interval_avg_pace
+        offset: 6
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 s/500m"
+        description: "Average pace per 500m in deciseconds."
+      - name: split_interval_total_calories
+        offset: 8
+        bytes: 2
+        type: uint16_le
+        unit: "calories"
+        description: "Total calories for this split/interval."
+      - name: split_interval_avg_calories
+        offset: 10
+        bytes: 2
+        type: uint16_le
+        unit: "calories/hr"
+        description: "Average caloric burn rate for this split/interval."
+      - name: split_interval_speed
+        offset: 12
+        bytes: 2
+        type: uint16_le
+        unit: "0.001 m/s"
+        description: "Average speed. Max 65.534 m/s."
+      - name: split_interval_power
+        offset: 14
+        bytes: 2
+        type: uint16_le
+        unit: "watts"
+        description: "Average power. Max 65534 W."
+      - name: split_avg_drag_factor
+        offset: 16
+        bytes: 1
+        type: uint8
+        description: "Average drag factor for this split."
+      - name: split_interval_number
+        offset: 17
+        bytes: 1
+        type: uint8
+        description: "Split/interval sequence number."
+      - name: erg_machine_type
+        offset: 18
+        bytes: 1
+        type: uint8
+        description: >
+          Erg Machine Type enum. For MultiErg workouts, this is
+          the machine type of the current interval.
+
+  # -------------------------------------------------------------------------
+  end_of_workout_summary:
+    uuid_suffix: "0x0039"
+    name: "C2 Rowing End of Workout Summary Data"
+    total_bytes: 20
+    struct_format: "<HBBHBHBBBBBBBBBH"
+    note: >
+      Sent at workout completion. PM5 resends with recovery_heartrate filled
+      in after 1 minute of rest (unless monitor is turned off or a new
+      workout is started). Table 15 multiplexed version is 18 bytes
+      (omits avg_pace).
+    fields:
+      - name: log_entry_date
+        offset: 0
+        bytes: 2
+        type: uint16_le
+        encoding: concept2_date.packed_date
+        description: >
+          Packed date: bits[3:0]=month, bits[8:4]=day, bits[15:9]=year-2000.
+      - name: log_entry_time_minutes
+        offset: 2
+        bytes: 1
+        type: uint8
+        unit: "minutes"
+        description: "Log entry time — minutes component."
+      - name: log_entry_time_hours
+        offset: 3
+        bytes: 1
+        type: uint8
+        unit: "hours"
+        description: "Log entry time — hours component."
+      - name: elapsed_time
+        offset: 4
+        bytes: 3
+        type: uint24_le
+        unit: "0.01 s"
+        description: "Total workout elapsed time."
+      - name: distance
+        offset: 7
+        bytes: 3
+        type: uint24_le
+        unit: "0.1 m"
+        description: "Total workout distance."
+      - name: avg_stroke_rate
+        offset: 10
+        bytes: 1
+        type: uint8
+        unit: "strokes/min"
+        description: "Average stroke rate for the workout."
+      - name: ending_heartrate
+        offset: 11
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Heart rate at end of workout."
+      - name: avg_heartrate
+        offset: 12
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Average heart rate during workout."
+      - name: min_heartrate
+        offset: 13
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Minimum heart rate during workout."
+      - name: max_heartrate
+        offset: 14
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: "Maximum heart rate during workout."
+      - name: avg_drag_factor
+        offset: 15
+        bytes: 1
+        type: uint8
+        description: "Average drag factor for the workout."
+      - name: recovery_heartrate
+        offset: 16
+        bytes: 1
+        type: uint8
+        unit: "bpm"
+        description: >
+          Recovery heart rate. 0 = not yet valid. After 1 minute of rest,
+          PM5 resends this characteristic with the actual recovery HR.
+      - name: workout_type
+        offset: 17
+        bytes: 1
+        type: uint8
+        enum: WorkoutType
+        description: "Workout type enumeration."
+      - name: avg_pace
+        offset: 18
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 s/500m"
+        description: "Average pace per 500m in deciseconds."
+    cross_ref:
+      c2bluetooth: >
+        data/workoutsummary.dart WorkoutSummary.fromBytes() —
+        timestamp(0-3), workTime(4-6)/100, workDistance(7-9)/10,
+        avgSPM(10), endHeartRate(11), avgHeartRate(12), minHeartRate(13),
+        maxHeartRate(14), avgDragFactor(15), recoveryHeartRate(16),
+        workoutType(17), avgPace(18-19)/10. Total = 20 bytes.
+      c2bluetooth_date: >
+        extensions.dart Concept2DateExtension.fromBytes() —
+        date_word = uint16_le(0:2), month = date_word & 0x0F,
+        day = (date_word >> 4) & 0x1F, year = ((date_word >> 9) & 0x7F) + 2000,
+        minutes = byte(2), hours = byte(3).
+
+  # -------------------------------------------------------------------------
+  end_of_workout_additional_summary:
+    uuid_suffix: "0x003A"
+    name: "C2 Rowing End of Workout Additional Summary Data"
+    total_bytes: 19
+    struct_format: "<HBBBHBHHHBHH"
+    note: >
+      Table 15 multiplexed version is 18 bytes (omits interval_type).
+    fields:
+      - name: log_entry_date
+        offset: 0
+        bytes: 2
+        type: uint16_le
+        encoding: concept2_date.packed_date
+        description: "Packed date (see concept2_date encoding)."
+      - name: log_entry_time_minutes
+        offset: 2
+        bytes: 1
+        type: uint8
+        unit: "minutes"
+        description: "Log entry time — minutes."
+      - name: log_entry_time_hours
+        offset: 3
+        bytes: 1
+        type: uint8
+        unit: "hours"
+        description: "Log entry time — hours."
+      - name: interval_type
+        offset: 4
+        bytes: 1
+        type: uint8
+        enum: IntervalType
+        description: "Interval type at end of workout."
+      - name: split_interval_size
+        offset: 5
+        bytes: 2
+        type: uint16_le
+        unit: "meters or seconds"
+        description: "Split/interval size (unit depends on workout type)."
+      - name: split_interval_count
+        offset: 7
+        bytes: 1
+        type: uint8
+        description: "Number of splits/intervals completed."
+      - name: total_calories
+        offset: 8
+        bytes: 2
+        type: uint16_le
+        unit: "calories"
+        description: "Total calories burned."
+      - name: watts
+        offset: 10
+        bytes: 2
+        type: uint16_le
+        unit: "watts"
+        description: "Average watts."
+      - name: total_rest_distance
+        offset: 12
+        bytes: 3
+        type: uint24_le
+        unit: "1 m"
+        description: "Total rest distance in meters."
+      - name: interval_rest_time
+        offset: 15
+        bytes: 2
+        type: uint16_le
+        unit: "seconds"
+        description: "Total interval rest time in seconds."
+      - name: avg_calories
+        offset: 17
+        bytes: 2
+        type: uint16_le
+        unit: "calories/hr"
+        description: "Average caloric burn rate."
+    cross_ref:
+      c2bluetooth: >
+        data/workoutsummary.dart WorkoutSummary2.fromBytes() —
+        timestamp(0-3), intervalType(4), intervalSize(5-6),
+        intervalCount(7), totalCalories(8-9), watts(10-11),
+        totalRestDistance(12-14), intervalRestTime(15-16),
+        avgCalories(17-18). Total = 19 bytes.
+
+  # -------------------------------------------------------------------------
+  heart_rate_belt_information:
+    uuid_suffix: "0x003B"
+    name: "C2 Rowing Heart Rate Belt Information"
+    total_bytes: 6
+    struct_format: "<BBI"
+    note: "Sent whenever the connected HR belt identity changes."
+    fields:
+      - name: manufacturer_id
+        offset: 0
+        bytes: 1
+        type: uint8
+        description: "Belt manufacturer ID."
+      - name: device_type
+        offset: 1
+        bytes: 1
+        type: uint8
+        description: "Belt device type."
+      - name: belt_id
+        offset: 2
+        bytes: 4
+        type: uint32_le
+        description: "Belt ID (4-byte unique identifier)."
+
+  # -------------------------------------------------------------------------
+  end_of_workout_additional_summary_2:
+    uuid_suffix: "0x003C"
+    name: "C2 Rowing End of Workout Additional Summary Data 2"
+    total_bytes: 10
+    struct_format: "<HBBHBHB"
+    fields:
+      - name: log_entry_date
+        offset: 0
+        bytes: 2
+        type: uint16_le
+        encoding: concept2_date.packed_date
+        description: "Packed date (see concept2_date encoding)."
+      - name: log_entry_time_minutes
+        offset: 2
+        bytes: 1
+        type: uint8
+        unit: "minutes"
+        description: "Log entry time — minutes."
+      - name: log_entry_time_hours
+        offset: 3
+        bytes: 1
+        type: uint8
+        unit: "hours"
+        description: "Log entry time — hours."
+      - name: avg_pace
+        offset: 4
+        bytes: 2
+        type: uint16_le
+        unit: "0.1 s/500m"
+        description: "Average pace per 500m in deciseconds."
+      - name: game_identifier
+        offset: 6
+        bytes: 1
+        type: uint8
+        description: "Game identifier / Workout Verified flag (see Appendix)."
+      - name: game_score
+        offset: 7
+        bytes: 2
+        type: uint16_le
+        description: "Game score (Fish/Darts: 1 pt LSB; Target: 0.1% LSB)."
+      - name: erg_machine_type
+        offset: 9
+        bytes: 1
+        type: uint8
+        description: >
+          Erg Machine Type enum. For MultiErg workouts, may differ
+          from connected machine.
+
+  # -------------------------------------------------------------------------
+  force_curve_data:
+    uuid_suffix: "0x003D"
+    name: "C2 Force Curve Data"
+    total_bytes: 20
+    total_bytes_note: "2-288 bytes total, split across multiple notifications of up to 20 bytes each"
+    struct_format: "variable"
+    note: >
+      Force curve data is sent as multiple successive BLE notifications.
+      Each notification has a 2-byte header followed by up to 9 16-bit
+      data points (18 bytes). PM5v1 does not support this feature.
+    fields:
+      - name: header
+        offset: 0
+        bytes: 1
+        type: uint8
+        description: >
+          MS nibble = total number of notifications for this force curve.
+          LS nibble = number of 16-bit data points in THIS notification.
+          Parse: total_chars = (header >> 4) & 0x0F, num_points = header & 0x0F.
+      - name: sequence_number
+        offset: 1
+        bytes: 1
+        type: uint8
+        description: "0-based sequence number for ordering notifications."
+      - name: data_points
+        offset: 2
+        bytes: 18
+        type: "int16_le[]"
+        description: >
+          Up to 9 force values as signed 16-bit little-endian integers.
+          Actual count is given by (header & 0x0F). Each pair of bytes
+          is one data point: struct.unpack('<' + 'h' * num_points, data[2:2+num_points*2]).
+
+  # -------------------------------------------------------------------------
+  additional_status_3:
+    uuid_suffix: "0x003E"
+    name: "C2 Rowing Additional Status 3"
+    total_bytes: 12
+    struct_format: "<BBHHBBBBH"
+    firmware_versions:
+      - "PM5 V172–V199.99"
+      - "PM5 V211–V249.99"
+      - "PM5 V253–V299.99"
+      - "PM5 V330–V349.99"
+      - "PM5 V363–V399.99"
+      - "PM5 V403–V449.99"
+      - "PM5 V872–V899.99"
+      - "PM5 V911–V949.99"
+      - "PM5 V953–V999.99"
+    fields:
+      - name: operational_state
+        offset: 0
+        bytes: 1
+        type: uint8
+        csafe_cmd: CSAFE_GET_OPERATIONALSTATE
+        description: "Current operational state."
+      - name: workout_verification_state
+        offset: 1
+        bytes: 1
+        type: uint8
+        description: "Workout verification state."
+      - name: screen_number
+        offset: 2
+        bytes: 2
+        type: uint16_le
+        description: "Current PM5 screen number."
+      - name: last_error
+        offset: 4
+        bytes: 2
+        type: uint16_le
+        description: "Last error code."
+      - name: calibration_mode
+        offset: 6
+        bytes: 1
+        type: uint8
+        description: "Calibration mode (BikeErg only; 0 for rower/SkiErg)."
+      - name: calibration_state
+        offset: 7
+        bytes: 1
+        type: uint8
+        description: "Calibration state (BikeErg only; 0 otherwise)."
+      - name: calibration_status
+        offset: 8
+        bytes: 1
+        type: uint8
+        description: "Calibration status (BikeErg only; 0 otherwise)."
+      - name: game_id
+        offset: 9
+        bytes: 1
+        type: uint8
+        description: "Active game ID."
+      - name: game_score
+        offset: 10
+        bytes: 2
+        type: uint16_le
+        description: "Current game score."
+
+  # -------------------------------------------------------------------------
+  logged_workout:
+    uuid_suffix: "0x003F"
+    name: "C2 Rowing Logged Workout"
+    total_bytes: 15
+    struct_format: "<QIHB"
+    firmware_versions:
+      - "PM5 V172–V199.99"
+      - "PM5 V211–V249.99"
+      - "PM5 V253–V299.99"
+      - "PM5 V330–V349.99"
+      - "PM5 V363–V399.99"
+      - "PM5 V403–V449.99"
+      - "PM5 V872–V899.99"
+      - "PM5 V911–V949.99"
+      - "PM5 V953–V999.99"
+    fields:
+      - name: workout_hash
+        offset: 0
+        bytes: 8
+        type: uint64_le
+        csafe_cmd: CSAFE_GET_CURRENT_WORKOUT_HASH
+        description: "8-byte workout hash for log identification."
+      - name: internal_log_address
+        offset: 8
+        bytes: 4
+        type: uint32_le
+        csafe_cmd: CSAFE_GET_INTERNALLOGPARAMS
+        description: "Internal flash log address."
+      - name: logged_workout_size
+        offset: 12
+        bytes: 2
+        type: uint16_le
+        description: "Logged workout size in bytes."
+      - name: erg_model_type
+        offset: 14
+        bytes: 1
+        type: uint8
+        description: "Erg model type."
+
+# ---------------------------------------------------------------------------
+# Multiplexed Information Data (Table 15, UUID 0x0080)
+# ---------------------------------------------------------------------------
+multiplexed:
+  uuid_suffix: "0x0080"
+  description: >
+    Multiplexed Information channel. A single notification characteristic
+    that carries any of the rowing data payloads, prefixed with a 1-byte
+    data ID. A characteristic is multiplexed here ONLY when its dedicated
+    notification is NOT enabled. Total BLE packet = 1 (ID) + payload bytes.
+  max_packet_bytes: 20
+  note: >
+    The multiplexed versions of some characteristics have slightly different
+    field counts than their individual characteristic counterparts, because
+    the 20-byte BLE notification limit constrains the total payload to
+    19 data bytes maximum (1 ID byte + 19 data bytes = 20). Where the
+    individual characteristic exceeds 19 bytes, the multiplexed version
+    omits trailing fields.
+
+  data_ids:
+    0x31:
+      name: general_status
+      characteristic_ref: general_status
+      mux_data_bytes: 19
+      char_data_bytes: 19
+      difference: "Identical to individual characteristic."
+
+    0x32:
+      name: additional_status_1
+      characteristic_ref: additional_status_1
+      mux_data_bytes: 19
+      char_data_bytes: 17
+      difference: >
+        Multiplexed version adds average_power (uint16_le, 2 bytes)
+        after rest_time, before erg_machine_type, for 19 total bytes.
+        Individual characteristic is 17 bytes without average_power.
+      mux_extra_fields:
+        - name: average_power
+          insert_before: erg_machine_type
+          bytes: 2
+          type: uint16_le
+          unit: "watts"
+          csafe_cmd: CSAFE_PM_GET_TOTAL_AVG_POWER
+
+    0x33:
+      name: additional_status_2
+      characteristic_ref: additional_status_2
+      mux_data_bytes: 18
+      char_data_bytes: 20
+      difference: >
+        Multiplexed version omits average_power (2 bytes) for 18 total.
+        Field order: elapsed_time(3), interval_count(1), total_calories(2),
+        split_avg_pace(2), split_avg_power(2), split_avg_calories(2),
+        last_split_time(3), last_split_distance(3).
+      mux_omitted_fields:
+        - average_power
+
+    0x35:
+      name: stroke_data
+      characteristic_ref: stroke_data
+      mux_data_bytes: 18
+      char_data_bytes: 20
+      difference: >
+        Multiplexed version omits work_per_stroke (2 bytes) for 18 total.
+        work_per_stroke appears in multiplexed 0x36 instead.
+      mux_omitted_fields:
+        - work_per_stroke
+
+    0x36:
+      name: additional_stroke_data
+      characteristic_ref: additional_stroke_data
+      mux_data_bytes: 17
+      char_data_bytes: 15
+      difference: >
+        Multiplexed version adds work_per_stroke (uint16_le, 2 bytes)
+        at the end for 17 total bytes.
+      mux_extra_fields:
+        - name: work_per_stroke
+          insert_after: projected_work_distance
+          bytes: 2
+          type: uint16_le
+          unit: "0.1 J"
+          csafe_cmd: CSAFE_PM_GET_STROKESTATS
+
+    0x37:
+      name: split_interval_data
+      characteristic_ref: split_interval_data
+      mux_data_bytes: 18
+      char_data_bytes: 18
+      difference: "Identical to individual characteristic."
+
+    0x38:
+      name: additional_split_interval_data
+      characteristic_ref: additional_split_interval_data
+      mux_data_bytes: 18
+      char_data_bytes: 19
+      difference: >
+        Multiplexed version omits erg_machine_type (1 byte) for 18 total.
+      mux_omitted_fields:
+        - erg_machine_type
+
+    0x39:
+      name: end_of_workout_summary
+      characteristic_ref: end_of_workout_summary
+      mux_data_bytes: 18
+      char_data_bytes: 20
+      difference: >
+        Multiplexed version omits avg_pace (2 bytes) for 18 total.
+      mux_omitted_fields:
+        - avg_pace
+
+    0x3A:
+      name: end_of_workout_additional_summary
+      characteristic_ref: end_of_workout_additional_summary
+      mux_data_bytes: 18
+      char_data_bytes: 19
+      difference: >
+        Multiplexed version omits interval_type (1 byte) for 18 total.
+      mux_omitted_fields:
+        - interval_type
+
+    0x3B:
+      name: heart_rate_belt_information
+      characteristic_ref: heart_rate_belt_information
+      mux_data_bytes: 6
+      char_data_bytes: 6
+      difference: "Identical to individual characteristic."
+
+    0x3C:
+      name: end_of_workout_additional_summary_2
+      characteristic_ref: end_of_workout_additional_summary_2
+      mux_data_bytes: 10
+      char_data_bytes: 10
+      difference: "Identical to individual characteristic."
+
+    0x3D:
+      name: force_curve_data
+      characteristic_ref: force_curve_data
+      mux_data_bytes: "variable"
+      char_data_bytes: "variable"
+      difference: "Same variable-length protocol."
+
+    0x3E:
+      name: additional_status_3
+      characteristic_ref: additional_status_3
+      mux_data_bytes: 12
+      char_data_bytes: 12
+      difference: "Identical to individual characteristic."
+
+    0x3F:
+      name: logged_workout
+      characteristic_ref: logged_workout
+      mux_data_bytes: 15
+      char_data_bytes: 15
+      difference: "Identical to individual characteristic."

@@ -1,0 +1,1418 @@
+# PM5 Workout Programming Sequences
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+# Pages: 76-92
+#
+# Defines how to program and control workouts via CSAFE commands.
+#
+# Cross-reference files:
+#   - docs/planning/spec/csafe/commands_c2.yaml — proprietary command definitions
+#   - docs/planning/spec/csafe/commands_public.yaml — public CSAFE command definitions
+#   - docs/planning/spec/csafe/enums.yaml — WorkoutType, IntervalType, ScreenType, etc.
+#   - docs/planning/spec/csafe/protocol.yaml — PM state machine, frame format
+#
+# IMPORTANT: The proprietary CSAFE interface does NOT use the public CSAFE
+# state machine functionality. The proprietary and public operating modes
+# should not be mixed as the resulting behavior will not be desirable.
+# (Spec p76)
+
+# =============================================================================
+#  PM State Machine (from protocol.yaml — included here for context)
+# =============================================================================
+pm_state_machine:
+  description: >
+    The PM reports its current state in the low nibble (mask 0x0F) of every
+    response status byte. The proprietary workout setup bypasses the public
+    CSAFE state machine — screen state commands drive transitions instead.
+  states:
+    - id: 0x01
+      name: "ready"
+      description: "PM is ready, not in a workout"
+    - id: 0x02
+      name: "idle"
+      description: "PM is idle, waiting for connection"
+    - id: 0x03
+      name: "have_id"
+      description: "PM has received a user ID"
+    - id: 0x05
+      name: "in_use"
+      description: "Workout in progress"
+    - id: 0x06
+      name: "pause"
+      description: "Workout paused (inactivity)"
+    - id: 0x07
+      name: "finish"
+      description: "Workout finished, viewing results"
+    - id: 0x08
+      name: "manual"
+      description: "Manual mode"
+    - id: 0x09
+      name: "offline"
+      description: "PM is offline"
+
+# =============================================================================
+#  Workout State Machine (from enums.yaml WorkoutState)
+# =============================================================================
+workout_state_machine:
+  description: >
+    Internal workout state transitions during a programmed workout.
+    Reported by PM_GET_WORKOUTSTATE. The PM progresses through these
+    states as the user rows through the workout.
+  states:
+    - name: "WAITTOBEGIN"
+      value: 0
+      description: "Workout configured, waiting for user to start rowing"
+    - name: "WORKOUTROW"
+      value: 1
+      description: "User is rowing during the main workout"
+    - name: "COUNTDOWNPAUSE"
+      value: 2
+      description: "Countdown pause between intervals"
+    - name: "INTERVALREST"
+      value: 3
+      description: "Rest period during interval workout"
+    - name: "INTERVALWORKTIME"
+      value: 4
+      description: "Work time interval in progress"
+    - name: "INTERVALWORKDISTANCE"
+      value: 5
+      description: "Work distance interval in progress"
+    - name: "INTERVALRESTENDTOWORKTIME"
+      value: 6
+      description: "Transitioning from rest to time work interval"
+    - name: "INTERVALRESTENDTOWORKDISTANCE"
+      value: 7
+      description: "Transitioning from rest to distance work interval"
+    - name: "INTERVALWORKTIMETOREST"
+      value: 8
+      description: "Transitioning from time work interval to rest"
+    - name: "INTERVALWORKDISTANCETOREST"
+      value: 9
+      description: "Transitioning from distance work interval to rest"
+    - name: "WORKOUTEND"
+      value: 10
+      description: "Workout has ended"
+    - name: "TERMINATE"
+      value: 11
+      description: "Workout terminated by user or command"
+    - name: "WORKOUTLOGGED"
+      value: 12
+      description: "Workout has been logged to memory"
+    - name: "REARM"
+      value: 13
+      description: "Workout rearmed for restart"
+
+  transitions:
+    simple_workout:
+      description: "Single-piece workout (fixed time/distance/calorie)"
+      flow:
+        - "WAITTOBEGIN → WORKOUTROW → WORKOUTEND → TERMINATE → WORKOUTLOGGED → REARM"
+    interval_workout:
+      description: "Interval workout with rest periods"
+      flow:
+        - "WAITTOBEGIN → INTERVALWORKTIME/DISTANCE"
+        - "INTERVALWORKTIME/DISTANCE → INTERVALWORKTIMETOREST/DISTANCETOREST"
+        - "INTERVALWORKTIMETOREST/DISTANCETOREST → INTERVALREST"
+        - "INTERVALREST → INTERVALRESTENDTOWORKTIME/DISTANCE"
+        - "(repeat for each interval)"
+        - "→ WORKOUTEND → TERMINATE → WORKOUTLOGGED → REARM"
+
+# =============================================================================
+#  Screen State Machine
+# =============================================================================
+screen_state_machine:
+  description: >
+    Screen state transitions during workout programming. The proprietary
+    CSAFE interface drives workout setup through PM_SET_SCREENSTATE commands
+    rather than the public CSAFE state transitions (GOREADY, GOINUSE, etc.).
+  command: "PM_SET_SCREENSTATE"
+  command_id: 0x13
+
+  programming_sequence:
+    description: >
+      General sequence for programming a workout via proprietary commands.
+      All proprietary commands are wrapped in CSAFE_SETPMCFG_CMD (0x76).
+    steps:
+      1: "Send workout configuration commands (type, duration, split, etc.)"
+      2: "Send PM_CONFIGURE_WORKOUT with programming_mode=1 (enable)"
+      3: "Send PM_SET_SCREENSTATE with screen_type=WORKOUT(1), screen_value=PREPARETOROWWORKOUT(1)"
+      4: "PM transitions to 'prepare to row' screen — user starts rowing"
+    note: >
+      All configuration commands and PM_SET_SCREENSTATE are typically sent
+      in a single CSAFE frame wrapped in CSAFE_SETPMCFG_CMD (0x76).
+
+  screen_types:
+    NONE: {value: 0, description: "No screen"}
+    WORKOUT: {value: 1, description: "Workout screen — used for all workout programming"}
+    RACE: {value: 2, description: "Race screen"}
+    CSAFE: {value: 3, description: "CSAFE connected screen"}
+    DIAG: {value: 4, description: "Diagnostics screen"}
+    MFG: {value: 5, description: "Manufacturing screen"}
+
+  screen_values_workout:
+    NONE: {value: 0, description: "No action"}
+    PREPARETOROWWORKOUT: {value: 1, description: "Transition to 'prepare to row' — start of workout"}
+    TERMINATEWORKOUT: {value: 2, description: "Terminate current workout"}
+    REARMWORKOUT: {value: 3, description: "Rearm workout for restart"}
+    REFRESHLOGCARD: {value: 4, description: "Refresh log card"}
+    PREPARETORACESTART: {value: 5, description: "Prepare for race start"}
+    GOTOMAINSCREEN: {value: 6, description: "Go to main screen"}
+
+# =============================================================================
+#  Duration Encoding
+# =============================================================================
+duration_encoding:
+  description: >
+    The PM_SET_WORKOUTDURATION and PM_SET_SPLITDURATION commands use a
+    type-indicator byte followed by a 4-byte big-endian value. The type
+    byte occupies the high bits and indicates the unit.
+  types:
+    TIME:
+      identifier: 0x00
+      description: "Duration in 0.01 second units"
+      unit: "0.01 sec"
+      example:
+        value: "20:00"
+        calculation: "20 * 60 * 100 = 120000 = 0x0001D4C0"
+        bytes: "00 00 01 D4 C0"
+    CALORIES:
+      identifier: 0x40
+      description: "Duration in 1 calorie units (split uses 0xC0)"
+      unit: "1 cal"
+      note: >
+        For PM_SET_WORKOUTDURATION the identifier is 0xC0.
+        For PM_SET_SPLITDURATION the identifier is 0xC0.
+        The fixed calorie examples in the spec use 0xC0 for workout duration
+        and 0xC0 for split duration. However, the fixed calorie interval
+        example uses 0x40 for workout duration identifier.
+      example:
+        value: "100 calories"
+        calculation: "100 = 0x00000064"
+        bytes: "C0 00 00 00 64"
+    DISTANCE:
+      identifier: 0x80
+      description: "Duration in 1 meter units"
+      unit: "1 meter"
+      example:
+        value: "2000m"
+        calculation: "2000 = 0x000007D0"
+        bytes: "80 00 00 07 D0"
+    WATTMIN:
+      identifier: 0xC0
+      description: "Duration in watt-minutes"
+      unit: "1 watt-minute"
+
+  rest_encoding:
+    description: >
+      PM_SET_RESTDURATION uses a simple 2-byte big-endian value in
+      1-second units. No type indicator byte.
+    unit: "1 second"
+    example:
+      value: "0:30 rest"
+      calculation: "30 = 0x001E"
+      bytes: "00 1E"
+
+  pace_encoding:
+    description: >
+      PM_SET_TARGETPACETIME uses a 4-byte big-endian value in 0.01-second
+      units.
+    unit: "0.01 sec"
+    example:
+      value: "1:40 pace"
+      calculation: "100 * 100 = 10000 = 0x00002710"
+      bytes: "00 00 27 10"
+
+# =============================================================================
+#  Workout Types and Programming Requirements
+# =============================================================================
+workout_types:
+
+  # ---------------------------------------------------------------------------
+  #  Standard List Workouts (Predefined, p78)
+  # ---------------------------------------------------------------------------
+  predefined:
+    description: >
+      Standard list workouts (DEFAULT_1 through DEFAULT_5) are programmed
+      using the public CSAFE_SETPROGRAM_CMD (0x24) with the workout number.
+      No proprietary commands are needed.
+    programming_sequence:
+      - step: 1
+        command: "CSAFE_SETPROGRAM_CMD"
+        command_id: 0x24
+        args:
+          program_number: "WORKOUTNUMBER_DEFAULT_1 through DEFAULT_5 (1-5)"
+          unused: 0x00
+    example:
+      name: "Standard List Workout #3"
+      hex: "F1 24 02 03 00 25 F2"
+      breakdown:
+        - "F1: Start flag"
+        - "24: CSAFE_SETPROGRAM_CMD"
+        - "02: 2 data bytes"
+        - "03: WORKOUTNUMBER_DEFAULT_3"
+        - "00: unused"
+        - "25: Checksum"
+        - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  Programmed Time+Power Workout (Public commands, pp77-78)
+  # ---------------------------------------------------------------------------
+  public_time_power:
+    description: >
+      A workout can be configured using public CSAFE commands only
+      (SETTWORK, SETPOWER, SETPROGRAM). The PM_SET_SPLITDURATION is sent
+      via the SETUSERCFG1 wrapper since it is a proprietary command.
+      This is the 'mixed' approach shown on spec pages 77-78.
+    workout_type_value: null
+    commands_used:
+      - {command: "CSAFE_SETTWORK_CMD", id: 0x20, description: "Set workout time"}
+      - {command: "CSAFE_SETUSERCFG1_CMD", id: 0x1A, description: "Wrapper for PM_SET_SPLITDURATION"}
+      - {command: "CSAFE_SETPOWER_CMD", id: 0x34, description: "Set power goal"}
+      - {command: "CSAFE_SETPROGRAM_CMD", id: 0x24, description: "Program the workout"}
+    example:
+      name: "20:00 / 4:00 splits / 100W target"
+      hex: "F1 20 03 00 14 00 1A 07 05 05 00 C0 5D 00 00 34 03 64 00 58 24 02 00 00 9A F2"
+      breakdown:
+        - "F1: Start flag"
+        - "20: CSAFE_SETTWORK_CMD"
+        - "03: 3 data bytes"
+        - "00: hours (0)"
+        - "14: minutes (20)"
+        - "00: seconds (0)"
+        - "1A: CSAFE_SETUSERCFG1_CMD (wrapper)"
+        - "07: wrapper byte count (7)"
+        - "05: PM_SET_SPLITDURATION"
+        - "05: command byte count (5)"
+        - "00: WORKOUT_DURATION_IDENTIFIER_TIME"
+        - "C0: 4:00 split (0x00005DC0 = 24000 centiseconds) byte 3"
+        - "5D: byte 2"
+        - "00: byte 1"
+        - "00: byte 0 (MSB)"
+        - "34: CSAFE_SETPOWER_CMD"
+        - "03: 3 data bytes"
+        - "64: 100W (LSB)"
+        - "00: 100W (MSB)"
+        - "58: Watt units specifier"
+        - "24: CSAFE_SETPROGRAM_CMD"
+        - "02: 2 data bytes"
+        - "00: WORKOUTNUMBER_PROGRAMMED"
+        - "00: unused"
+        - "9A: Checksum"
+        - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  JustRow (Proprietary, p79)
+  # ---------------------------------------------------------------------------
+  just_row:
+    workout_type_value: 0x01
+    workout_type_name: "WORKOUTTYPE_JUSTROW_SPLITS"
+    description: "Free rowing with automatic splits"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x01, name: "WORKOUTTYPE_JUSTROW_SPLITS"}
+      - step: 2
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Distance (Proprietary, pp79-80)
+  # ---------------------------------------------------------------------------
+  fixed_distance:
+    workout_type_value: 0x03
+    workout_type_name: "WORKOUTTYPE_FIXEDDIST_SPLITS"
+    description: "Row a fixed distance with automatic splits"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_SPLITDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x03, name: "WORKOUTTYPE_FIXEDDIST_SPLITS"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0x80, name: "WORKOUT_DURATION_IDENTIFIER_DISTANCE"}
+          duration: "4-byte big-endian distance in meters"
+      - step: 3
+        command: "PM_SET_SPLITDURATION"
+        command_id: 0x05
+        byte_count: 5
+        args:
+          duration_type: {value: 0x80, name: "WORKOUT_DURATION_IDENTIFIER_DISTANCE"}
+          duration: "4-byte big-endian split distance in meters"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Time (Proprietary, pp80-81)
+  # ---------------------------------------------------------------------------
+  fixed_time:
+    workout_type_value: 0x05
+    workout_type_name: "WORKOUTTYPE_FIXEDTIME_SPLITS"
+    description: "Row for a fixed time with automatic splits"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_SPLITDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x05, name: "WORKOUTTYPE_FIXEDTIME_SPLITS"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0x00, name: "WORKOUT_DURATION_IDENTIFIER_TIME"}
+          duration: "4-byte big-endian time in 0.01 sec"
+      - step: 3
+        command: "PM_SET_SPLITDURATION"
+        command_id: 0x05
+        byte_count: 5
+        args:
+          duration_type: {value: 0x00, name: "WORKOUT_DURATION_IDENTIFIER_TIME"}
+          duration: "4-byte big-endian split time in 0.01 sec"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Calories (Proprietary, pp81-82)
+  # ---------------------------------------------------------------------------
+  fixed_calories:
+    workout_type_value: 0x0A
+    workout_type_name: "WORKOUTTYPE_FIXEDCALORIE_SPLITS"
+    description: "Row until a fixed calorie target is reached with automatic splits"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_SPLITDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x0A, name: "WORKOUTTYPE_FIXEDCALORIE_SPLITS"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0xC0, name: "WORKOUT_DURATION_IDENTIFIER_CALORIES"}
+          duration: "4-byte big-endian calorie count (1 cal LSB)"
+      - step: 3
+        command: "PM_SET_SPLITDURATION"
+        command_id: 0x05
+        byte_count: 5
+        args:
+          duration_type: {value: 0xC0, name: "WORKOUT_DURATION_IDENTIFIER_CALORIES"}
+          duration: "4-byte big-endian split calorie count (1 cal LSB)"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Distance Interval (Proprietary, p82)
+  # ---------------------------------------------------------------------------
+  fixed_distance_interval:
+    workout_type_value: 0x07
+    workout_type_name: "WORKOUTTYPE_FIXEDDIST_INTERVAL"
+    description: "Repeat a fixed distance with rest between each interval"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_RESTDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x07, name: "WORKOUTTYPE_FIXEDDIST_INTERVAL"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0x80, name: "WORKOUT_DURATION_IDENTIFIER_DISTANCE"}
+          duration: "4-byte big-endian interval distance in meters"
+      - step: 3
+        command: "PM_SET_RESTDURATION"
+        command_id: 0x04
+        byte_count: 2
+        args:
+          duration: "2-byte big-endian rest duration in seconds"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Time Interval (Proprietary, pp82-83)
+  # ---------------------------------------------------------------------------
+  fixed_time_interval:
+    workout_type_value: 0x06
+    workout_type_name: "WORKOUTTYPE_FIXEDTIME_INTERVAL"
+    description: "Repeat a fixed time with rest between each interval"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_RESTDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x06, name: "WORKOUTTYPE_FIXEDTIME_INTERVAL"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0x00, name: "WORKOUT_DURATION_IDENTIFIER_TIME"}
+          duration: "4-byte big-endian interval time in 0.01 sec"
+      - step: 3
+        command: "PM_SET_RESTDURATION"
+        command_id: 0x04
+        byte_count: 2
+        args:
+          duration: "2-byte big-endian rest duration in seconds"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Calorie Interval (Proprietary, pp83-84)
+  # ---------------------------------------------------------------------------
+  fixed_calorie_interval:
+    workout_type_value: 0x0C
+    workout_type_name: "WORKOUTTYPE_FIXEDCALS_INTERVAL"
+    description: "Repeat a fixed calorie target with rest between each interval"
+    required_commands:
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_RESTDURATION"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x0C, name: "WORKOUTTYPE_FIXEDCALS_INTERVAL"}
+      - step: 2
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: {value: 0x40, name: "WORKOUT_DURATION_IDENTIFIER_CALORIES"}
+          duration: "4-byte big-endian calorie count (1 cal LSB)"
+      - step: 3
+        command: "PM_SET_RESTDURATION"
+        command_id: 0x04
+        byte_count: 2
+        args:
+          duration: "2-byte big-endian rest duration in seconds"
+      - step: 4
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 5
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Variable Interval (Proprietary, pp84-86)
+  # ---------------------------------------------------------------------------
+  variable_interval:
+    workout_type_value: 0x08
+    workout_type_name: "WORKOUTTYPE_VARIABLE_INTERVAL"
+    description: >
+      Variable interval workout where each interval can have a different
+      type (time or distance), duration, rest, and target pace. Each
+      interval is programmed individually with PM_CONFIGURE_WORKOUT sent
+      after each one.
+    required_commands:
+      - "PM_SET_WORKOUTINTERVALCOUNT"
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_INTERVALTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_RESTDURATION"
+      - "PM_SET_TARGETPACETIME"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        description: "Set interval count to 0 (first interval, zero-indexed)"
+        command: "PM_SET_WORKOUTINTERVALCOUNT"
+        command_id: 0x18
+        byte_count: 1
+        args:
+          interval_count: 0x00
+      - step: 2
+        description: "Set workout type to variable interval"
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x08, name: "WORKOUTTYPE_VARIABLE_INTERVAL"}
+      - step: 3
+        description: "Set interval type for this interval"
+        command: "PM_SET_INTERVALTYPE"
+        command_id: 0x17
+        byte_count: 1
+        args:
+          interval_type: "INTERVALTYPE_TIME (0) or INTERVALTYPE_DIST (1)"
+      - step: 4
+        description: "Set work duration for this interval"
+        command: "PM_SET_WORKOUTDURATION"
+        command_id: 0x03
+        byte_count: 5
+        args:
+          duration_type: "matches interval type"
+          duration: "4-byte big-endian value"
+      - step: 5
+        description: "Set rest duration for this interval"
+        command: "PM_SET_RESTDURATION"
+        command_id: 0x04
+        byte_count: 2
+        args:
+          duration: "2-byte big-endian rest in seconds"
+      - step: 6
+        description: "Set target pace for this interval"
+        command: "PM_SET_TARGETPACETIME"
+        command_id: 0x06
+        byte_count: 4
+        args:
+          pace_time: "4-byte big-endian pace in 0.01 sec"
+      - step: 7
+        description: "Commit this interval configuration"
+        command: "PM_CONFIGURE_WORKOUT"
+        command_id: 0x14
+        byte_count: 1
+        args:
+          programming_mode: {value: 0x01, name: "ENABLE"}
+      - step: 8
+        description: "Repeat steps 1-7 for each subsequent interval (incrementing interval count)"
+        note: >
+          PM_SET_WORKOUTTYPE is only sent with the first interval.
+          Subsequent intervals omit it.
+      - step: 9
+        description: "After last interval, set screen state to start"
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Variable Interval with Undefined Rest (Proprietary, pp86-88)
+  # ---------------------------------------------------------------------------
+  variable_interval_undefined_rest:
+    workout_type_value: 0x09
+    workout_type_name: "WORKOUTTYPE_VARIABLE_UNDEFINEDREST_INTERVAL"
+    description: >
+      Variable interval workout where rest periods are undefined (user
+      presses button to end rest). Must set PM_SET_SPLITDURATION distance
+      to 0 to avoid triggering Biathlon-specific logic.
+    important_note: >
+      Setting SplitDurationDistance to 0 is REQUIRED when at least one
+      undefined rest interval is configured. A Biathlon workout is a form of
+      variable interval workout with undefined rest that uses a non-zero
+      SplitDurationDistance to assess a penalty distance. Setting it to 0
+      prevents this special-case logic from activating.
+    required_commands:
+      - "PM_SET_WORKOUTINTERVALCOUNT"
+      - "PM_SET_WORKOUTTYPE"
+      - "PM_SET_INTERVALTYPE"
+      - "PM_SET_WORKOUTDURATION"
+      - "PM_SET_RESTDURATION"
+      - "PM_SET_TARGETPACETIME"
+      - "PM_CONFIGURE_WORKOUT"
+      - "PM_SET_SPLITDURATION"
+      - "PM_SET_SCREENSTATE"
+    programming_sequence:
+      - step: 1
+        description: "Program each interval (same as variable_interval)"
+        note: >
+          Use INTERVALTYPE_DISTANCERESTUNDEFINED (4) or
+          INTERVALTYPE_TIMERESTUNDEFINED (3) as the interval type.
+          Set rest duration to 0x0000 (undefined).
+      - step: 2
+        description: "After all intervals, set workout type to undefined rest"
+        command: "PM_SET_WORKOUTTYPE"
+        command_id: 0x01
+        byte_count: 1
+        args:
+          workout_type: {value: 0x09, name: "WORKOUTTYPE_VARIABLE_UNDEFINEDREST_INTERVAL"}
+      - step: 3
+        description: "Set split duration distance to 0 (prevent Biathlon logic)"
+        command: "PM_SET_SPLITDURATION"
+        command_id: 0x05
+        byte_count: 5
+        args:
+          duration_type: {value: 0x80, name: "WORKOUT_DURATION_IDENTIFIER_DISTANCE"}
+          duration: "0x00000000 (zero meters)"
+      - step: 4
+        description: "Set screen state to start"
+        command: "PM_SET_SCREENSTATE"
+        command_id: 0x13
+        byte_count: 2
+        args:
+          screen_type: {value: 0x01, name: "SCREENTYPE_WORKOUT"}
+          screen_value: {value: 0x01, name: "SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"}
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Interval with Undefined Rest (Proprietary, p88)
+  # ---------------------------------------------------------------------------
+  fixed_interval_undefined_rest:
+    description: >
+      All fixed interval workouts using undefined rest should be programmed
+      as variable interval workouts with undefined rest, up to a maximum of
+      50 intervals. When terminated, they are logged with only the intervals
+      completed.
+    programming_note: >
+      Use the variable_interval_undefined_rest programming approach.
+      Each interval has the same duration but undefined rest.
+
+# =============================================================================
+#  Interval Programming Details
+# =============================================================================
+interval_programming:
+
+  fixed_intervals:
+    description: >
+      For fixed intervals, all intervals share the same work duration and
+      rest duration. Only one set of parameters is sent. The PM repeats
+      the interval until the user terminates.
+    commands:
+      - "PM_SET_WORKOUTTYPE — set to fixed interval type"
+      - "PM_SET_WORKOUTDURATION — set the per-interval work duration"
+      - "PM_SET_RESTDURATION — set the per-interval rest duration"
+      - "PM_CONFIGURE_WORKOUT — enable programming"
+      - "PM_SET_SCREENSTATE — start workout"
+    max_intervals: "Unlimited (user terminates when done)"
+
+  variable_intervals:
+    description: >
+      For variable intervals, each interval is independently configured.
+      PM_SET_WORKOUTINTERVALCOUNT sets the current interval index (0-based),
+      then interval-specific commands set the type, duration, rest, and
+      target pace. PM_CONFIGURE_WORKOUT is called after each interval to
+      commit it. All intervals can be sent in a single CSAFE frame.
+    commands_per_interval:
+      - "PM_SET_WORKOUTINTERVALCOUNT — set interval index"
+      - "PM_SET_INTERVALTYPE — TIME(0), DIST(1), TIMERESTUNDEFINED(3), DISTANCERESTUNDEFINED(4)"
+      - "PM_SET_WORKOUTDURATION — work duration for this interval"
+      - "PM_SET_RESTDURATION — rest duration for this interval"
+      - "PM_SET_TARGETPACETIME — optional target pace"
+      - "PM_CONFIGURE_WORKOUT — commit this interval"
+    max_intervals_pm3_pm4: 30
+    max_intervals_pm5: 50
+    note: >
+      PM_SET_WORKOUTTYPE is sent with the FIRST interval only (index 0).
+      Subsequent intervals do not repeat the workout type command.
+      The last interval's PM_CONFIGURE_WORKOUT is followed by
+      PM_SET_SCREENSTATE to begin the workout.
+
+# =============================================================================
+#  Sample Hex Sequences (Complete CSAFE frames from spec pp78-88)
+# =============================================================================
+sample_hex_sequences:
+
+  # ---------------------------------------------------------------------------
+  #  Predefined Workout
+  # ---------------------------------------------------------------------------
+  predefined_workout_3:
+    description: "Standard List Workout #3"
+    spec_page: 78
+    hex_bytes: "F1 24 02 03 00 25 F2"
+    frames:
+      - description: "Select pre-stored workout #3"
+        hex_bytes: "F1 24 02 03 00 25 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "24: CSAFE_SETPROGRAM_CMD"
+          - "02: Command byte count"
+          - "03: WORKOUTNUMBER_DEFAULT_3"
+          - "00: unused"
+          - "25: Checksum"
+          - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  Public Mixed Workout (20:00 / 4:00 splits / 100W)
+  # ---------------------------------------------------------------------------
+  public_time_power:
+    description: "20:00 workout, 4:00 splits, 100W target power (public + wrapper commands)"
+    spec_page: 78
+    frames:
+      - description: "Configure 20:00 time workout with 4:00 splits and 100W target"
+        hex_bytes: "F1 20 03 00 14 00 1A 07 05 05 00 C0 5D 00 00 34 03 64 00 58 24 02 00 00 9A F2"
+        breakdown:
+          - "F1: Start flag"
+          - "20: CSAFE_SETTWORK_CMD"
+          - "03: 3 data bytes"
+          - "00 14 00: 0h 20m 0s"
+          - "1A: CSAFE_SETUSERCFG1_CMD (wrapper)"
+          - "07: Wrapper byte count"
+          - "05: PM_SET_SPLITDURATION"
+          - "05: Command byte count"
+          - "00: WORKOUT_DURATION_IDENTIFIER_TIME"
+          - "C0 5D 00 00: 4:00 = 24000 centisec = 0x00005DC0 (big-endian)"
+          - "34: CSAFE_SETPOWER_CMD"
+          - "03: 3 data bytes"
+          - "64 00: 100W (little-endian)"
+          - "58: Watt units specifier"
+          - "24: CSAFE_SETPROGRAM_CMD"
+          - "02: 2 data bytes"
+          - "00: WORKOUTNUMBER_PROGRAMMED"
+          - "00: unused"
+          - "9A: Checksum"
+          - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  JustRow
+  # ---------------------------------------------------------------------------
+  just_row:
+    description: "Start a JustRow (free rowing) session"
+    spec_page: 79
+    hex_bytes: "F1 76 07 01 01 01 13 02 01 01 61 F2"
+    frames:
+      - description: "Set workout type to JustRow and transition to workout screen"
+        hex_bytes: "F1 76 07 01 01 01 13 02 01 01 61 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD (C2 proprietary wrapper)"
+          - "07: Wrapper byte count (7 bytes follow)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "01: WORKOUTTYPE_JUSTROW_SPLITS"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "61: Checksum"
+          - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Distance: 2000m / 500m splits (Proprietary, SETPMCFG)
+  # ---------------------------------------------------------------------------
+  fixed_distance_2000m:
+    description: "2000m workout with 500m splits (400m in spec note — see breakdown)"
+    spec_page: 80
+    hex_bytes: "F1 76 18 01 01 03 03 05 80 00 00 07 D0 05 05 80 00 00 01 90 14 01 01 13 02 01 01 28 F2"
+    frames:
+      - description: "Program 2000m distance with 400m splits"
+        hex_bytes: "F1 76 18 01 01 03 03 05 80 00 00 07 D0 05 05 80 00 00 01 90 14 01 01 13 02 01 01 28 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "18: Wrapper byte count (24 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "03: WORKOUTTYPE_FIXEDDIST_SPLITS"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "80: WORKOUT_DURATION_IDENTIFIER_DISTANCE"
+          - "00 00 07 D0: 2000m (0x000007D0, big-endian)"
+          - "05: PM_SET_SPLITDURATION"
+          - "05: Command byte count"
+          - "80: WORKOUT_DURATION_IDENTIFIER_DISTANCE"
+          - "00 00 01 90: 400m (0x00000190, big-endian)"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "28: Checksum"
+          - "F2: Stop flag"
+        notes: >
+          The spec labels this "2000m/500m splits" but the split bytes
+          encode 400m (0x190 = 400). This appears to be a spec labeling
+          discrepancy — the hex is authoritative.
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Time: 20:00 / 4:00 splits (Proprietary, SETPMCFG)
+  # ---------------------------------------------------------------------------
+  fixed_time_20min:
+    description: "20:00 workout with 4:00 splits"
+    spec_page: 80
+    hex_bytes: "F1 76 18 01 01 05 03 05 00 00 01 D4 C0 05 05 00 00 00 5D C0 14 01 01 13 02 01 01 E0 F2"
+    frames:
+      - description: "Program 20:00 time workout with 4:00 splits"
+        hex_bytes: "F1 76 18 01 01 05 03 05 00 00 01 D4 C0 05 05 00 00 00 5D C0 14 01 01 13 02 01 01 E0 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "18: Wrapper byte count (24 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "05: WORKOUTTYPE_FIXEDTIME_SPLITS"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "00: WORKOUT_DURATION_IDENTIFIER_TIME"
+          - "00 01 D4 C0: 20:00 = 1,200,000 centisec = 0x00012540... (spec shows 0x0001D4C0 = 120,000 — see note)"
+          - "05: PM_SET_SPLITDURATION"
+          - "05: Command byte count"
+          - "00: WORKOUT_DURATION_IDENTIFIER_TIME"
+          - "00 00 5D C0: 4:00 = 24,000 centisec = 0x00005DC0"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "E0: Checksum"
+          - "F2: Stop flag"
+        notes: >
+          Duration bytes 00 01 D4 C0 = 0x0001D4C0 = 120,768 centiseconds
+          ≈ 20:07.68. The spec labels this as "20:00" — the hex values from
+          the spec are reproduced verbatim.
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Calories: 100 Cal / 20 Cal splits
+  # ---------------------------------------------------------------------------
+  fixed_calories_100cal:
+    description: "100 calorie workout with 20 cal splits"
+    spec_page: 81
+    hex_bytes: "F1 76 18 01 01 0A 03 05 C0 00 00 00 64 05 05 C0 00 00 00 14 14 01 01 13 02 01 01 17 F2"
+    frames:
+      - description: "Program 100 calorie workout with 20 cal splits"
+        hex_bytes: "F1 76 18 01 01 0A 03 05 C0 00 00 00 64 05 05 C0 00 00 00 14 14 01 01 13 02 01 01 17 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "18: Wrapper byte count (24 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "0A: WORKOUTTYPE_FIXEDCALORIE_SPLITS"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "C0: WORKOUT_DURATION_IDENTIFIER_CALORIES"
+          - "00 00 00 64: 100 calories (0x00000064, big-endian)"
+          - "05: PM_SET_SPLITDURATION"
+          - "05: Command byte count"
+          - "C0: WORKOUT_DURATION_IDENTIFIER_CALORIES"
+          - "00 00 00 14: 20 calories (0x00000014, big-endian)"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "17: Checksum"
+          - "F2: Stop flag"
+        notes: >
+          The spec shows '0' in the calorie split hex "05 05 0 00 00 00 14"
+          which appears to be a typo for "C0" — the hex_bytes above use
+          the corrected value matching the calorie duration identifier.
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Distance Interval: 500m / 0:30 rest
+  # ---------------------------------------------------------------------------
+  fixed_distance_interval_500m:
+    description: "500m intervals with 0:30 rest"
+    spec_page: 82
+    hex_bytes: "F1 76 15 01 01 07 03 05 80 00 00 01 F4 04 02 00 1E 14 01 01 13 02 01 01 0A F2"
+    frames:
+      - description: "Program 500m distance intervals with 30s rest"
+        hex_bytes: "F1 76 15 01 01 07 03 05 80 00 00 01 F4 04 02 00 1E 14 01 01 13 02 01 01 0A F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "15: Wrapper byte count (21 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "07: WORKOUTTYPE_FIXEDDIST_INTERVAL"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "80: WORKOUT_DURATION_IDENTIFIER_DISTANCE"
+          - "00 00 01 F4: 500m (0x000001F4, big-endian)"
+          - "04: PM_SET_RESTDURATION"
+          - "02: Command byte count"
+          - "00 1E: 30 seconds rest (0x001E, big-endian)"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "0A: Checksum"
+          - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Time Interval: 2:00 / 0:30 rest
+  # ---------------------------------------------------------------------------
+  fixed_time_interval_2min:
+    description: "2:00 intervals with 0:30 rest"
+    spec_page: 82
+    hex_bytes: "F1 76 15 01 01 06 03 05 00 00 00 2E E0 04 02 00 1E 14 01 01 13 02 01 01 0A F2"
+    frames:
+      - description: "Program 2:00 time intervals with 30s rest"
+        hex_bytes: "F1 76 15 01 01 06 03 05 00 00 00 2E E0 04 02 00 1E 14 01 01 13 02 01 01 0A F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "15: Wrapper byte count (21 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "06: WORKOUTTYPE_FIXEDTIME_INTERVAL"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "00: WORKOUT_DURATION_IDENTIFIER_TIME"
+          - "00 00 2E E0: 2:00 = 12,000 centisec = 0x00002EE0"
+          - "04: PM_SET_RESTDURATION"
+          - "02: Command byte count"
+          - "00 1E: 30 seconds rest"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "0A: Checksum"
+          - "F2: Stop flag"
+
+  # ---------------------------------------------------------------------------
+  #  Fixed Calorie Interval: 25 Cal / 1:00 rest
+  # ---------------------------------------------------------------------------
+  fixed_calorie_interval_25cal:
+    description: "25 calorie intervals with 1:00 rest"
+    spec_page: 83
+    hex_bytes: "F1 76 15 01 01 0C 03 05 40 00 00 00 19 04 02 00 3C 14 01 01 13 02 01 01 3F F2"
+    frames:
+      - description: "Program 25 cal intervals with 60s rest"
+        hex_bytes: "F1 76 15 01 01 0C 03 05 40 00 00 00 19 04 02 00 3C 14 01 01 13 02 01 01 3F F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "15: Wrapper byte count (21 bytes)"
+          - "01: PM_SET_WORKOUTTYPE"
+          - "01: Command byte count"
+          - "0C: WORKOUTTYPE_FIXEDCALS_INTERVAL"
+          - "03: PM_SET_WORKOUTDURATION"
+          - "05: Command byte count"
+          - "40: WORKOUT_DURATION_IDENTIFIER_CALORIES"
+          - "00 00 00 19: 25 calories (0x00000019, big-endian)"
+          - "04: PM_SET_RESTDURATION"
+          - "02: Command byte count"
+          - "00 3C: 60 seconds rest (0x003C)"
+          - "14: PM_CONFIGURE_WORKOUT"
+          - "01: Command byte count"
+          - "01: Programming mode enable"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "01: SCREENVALUEWORKOUT_PREPARETOROWWORKOUT"
+          - "3F: Checksum"
+          - "F2: Stop flag"
+        notes: >
+          The spec checksum for the calorie interval example shows 0A
+          but corrected hex shows 3F given the adjusted rest byte 0x0C→0x3C.
+          The hex_bytes here are from the spec (rest = 1:00 = 60s = 0x3C).
+
+  # ---------------------------------------------------------------------------
+  #  Variable Interval: v500m/1:00r…4 intervals
+  # ---------------------------------------------------------------------------
+  variable_interval_4:
+    description: >
+      4 variable intervals: 500m/1:00r, 3:00/0:00r, 1000m/0:00r, 5:00/2:00r
+      — all with 1:40 target pace
+    spec_page: 84
+    hex_bytes: >
+      F1 76 6F 18 01 00 01 01 08 17 01 01 03 05 80 00 00 01 F4 04 02 00 3C
+      06 04 00 00 27 10 14 01 01 18 01 01 17 01 00 03 05 00 00 00 46 50 04
+      02 00 00 06 04 00 00 27 10 14 01 01 18 01 02 17 01 01 03 05 80 00 00
+      03 E8 04 02 00 00 06 04 00 00 27 10 14 01 01 18 01 03 17 01 00 03 05
+      00 00 00 75 30 04 02 00 78 06 04 00 00 27 10 14 01 01 13 02 01 01 C6 F2
+    frames:
+      - description: "All 4 intervals in a single frame"
+        hex_bytes: >
+          F1 76 6F 18 01 00 01 01 08 17 01 01 03 05 80 00 00 01 F4 04 02 00 3C
+          06 04 00 00 27 10 14 01 01 18 01 01 17 01 00 03 05 00 00 00 46 50 04
+          02 00 00 06 04 00 00 27 10 14 01 01 18 01 02 17 01 01 03 05 80 00 00
+          03 E8 04 02 00 00 06 04 00 00 27 10 14 01 01 18 01 03 17 01 00 03 05
+          00 00 00 75 30 04 02 00 78 06 04 00 00 27 10 14 01 01 13 02 01 01 C6 F2
+        intervals:
+          - interval: 1
+            type: "INTERVALTYPE_DIST (1)"
+            work: "500m (0x000001F4)"
+            rest: "1:00 (60s = 0x003C)"
+            pace: "1:40 (10000 centisec = 0x00002710)"
+            commands: >
+              18 01 00 — interval count 0
+              01 01 08 — workout type VARIABLE_INTERVAL
+              17 01 01 — interval type DIST
+              03 05 80 00 00 01 F4 — duration 500m
+              04 02 00 3C — rest 60s
+              06 04 00 00 27 10 — pace 1:40
+              14 01 01 — configure workout enable
+          - interval: 2
+            type: "INTERVALTYPE_TIME (0)"
+            work: "3:00 (18000 centisec = 0x00004650)"
+            rest: "0:00 (0s = 0x0000)"
+            pace: "1:40 (0x00002710)"
+            commands: >
+              18 01 01 — interval count 1
+              17 01 00 — interval type TIME
+              03 05 00 00 00 46 50 — duration 3:00
+              04 02 00 00 — rest 0s
+              06 04 00 00 27 10 — pace 1:40
+              14 01 01 — configure workout enable
+          - interval: 3
+            type: "INTERVALTYPE_DIST (1)"
+            work: "1000m (0x000003E8)"
+            rest: "0:00 (0s = 0x0000)"
+            pace: "1:40 (0x00002710)"
+            commands: >
+              18 01 02 — interval count 2
+              17 01 01 — interval type DIST
+              03 05 80 00 00 03 E8 — duration 1000m
+              04 02 00 00 — rest 0s
+              06 04 00 00 27 10 — pace 1:40
+              14 01 01 — configure workout enable
+          - interval: 4
+            type: "INTERVALTYPE_TIME (0)"
+            work: "5:00 (30000 centisec = 0x00007530)"
+            rest: "2:00 (120s = 0x0078)"
+            pace: "1:40 (0x00002710)"
+            commands: >
+              18 01 03 — interval count 3
+              17 01 00 — interval type TIME
+              03 05 00 00 00 75 30 — duration 5:00
+              04 02 00 78 — rest 120s
+              06 04 00 00 27 10 — pace 1:40
+              14 01 01 — configure workout enable
+        trailer: >
+          13 02 01 01 — PM_SET_SCREENSTATE: WORKOUT / PREPARETOROWWORKOUT
+          C6 — Checksum
+          F2 — Stop flag
+
+  # ---------------------------------------------------------------------------
+  #  Variable Interval Undefined Rest: v100m…2
+  # ---------------------------------------------------------------------------
+  variable_interval_undefined_rest_2:
+    description: >
+      2 variable intervals with undefined rest:
+      Interval 1: 100m, target pace 2:10
+      Interval 2: 2:00, target pace 2:10
+    spec_page: 86
+    hex_bytes: >
+      F1 76 45 18 01 00 01 01 08 17 01 04 03 05 80 00 00 00 64 04 02 00 00
+      06 04 00 00 32 C8 14 01 01 18 01 01 17 01 03 03 05 00 00 00 2E E0 04
+      02 00 00 06 04 00 00 32 C8 14 01 01 01 01 09 05 05 80 00 00 00 00 13
+      02 01 01 8F F2
+    frames:
+      - description: "2 undefined-rest intervals plus anti-Biathlon guard"
+        hex_bytes: >
+          F1 76 45 18 01 00 01 01 08 17 01 04 03 05 80 00 00 00 64 04 02 00 00
+          06 04 00 00 32 C8 14 01 01 18 01 01 17 01 03 03 05 00 00 00 2E E0 04
+          02 00 00 06 04 00 00 32 C8 14 01 01 01 01 09 05 05 80 00 00 00 00 13
+          02 01 01 8F F2
+        intervals:
+          - interval: 1
+            type: "INTERVALTYPE_DISTANCERESTUNDEFINED (4)"
+            work: "100m (0x00000064)"
+            rest: "0:00 (undefined — 0x0000)"
+            pace: "2:10 (13000 centisec = 0x000032C8)"
+            commands: >
+              18 01 00 — interval count 0
+              01 01 08 — workout type VARIABLE_INTERVAL
+              17 01 04 — interval type DISTANCERESTUNDEFINED
+              03 05 80 00 00 00 64 — duration 100m
+              04 02 00 00 — rest 0s (undefined)
+              06 04 00 00 32 C8 — pace 2:10
+              14 01 01 — configure workout enable
+          - interval: 2
+            type: "INTERVALTYPE_TIMERESTUNDEFINED (3)"
+            work: "2:00 (12000 centisec = 0x00002EE0)"
+            rest: "0:00 (undefined — 0x0000)"
+            pace: "2:10 (0x000032C8)"
+            commands: >
+              18 01 01 — interval count 1
+              17 01 03 — interval type TIMERESTUNDEFINED
+              03 05 00 00 00 2E E0 — duration 2:00
+              04 02 00 00 — rest 0s (undefined)
+              06 04 00 00 32 C8 — pace 2:10
+              14 01 01 — configure workout enable
+        trailer: >
+          01 01 09 — PM_SET_WORKOUTTYPE: VARIABLE_UNDEFINEDREST_INTERVAL
+          05 05 80 00 00 00 00 — PM_SET_SPLITDURATION: 0m (anti-Biathlon guard)
+          13 02 01 01 — PM_SET_SCREENSTATE: WORKOUT / PREPARETOROWWORKOUT
+          8F — Checksum (spec shows 8F for the corrected hex)
+          F2 — Stop flag
+        note: >
+          The PM_SET_WORKOUTTYPE (0x09 = VARIABLE_UNDEFINEDREST_INTERVAL) and
+          PM_SET_SPLITDURATION (0m distance) are sent AFTER all intervals are
+          configured, not with the first interval. This overrides the initial
+          WORKOUTTYPE_VARIABLE_INTERVAL (0x08) sent with interval 1.
+
+  # ---------------------------------------------------------------------------
+  #  Terminate Workout
+  # ---------------------------------------------------------------------------
+  terminate_workout:
+    description: "Terminate the current workout"
+    spec_page: 88
+    hex_bytes: "F1 76 04 13 02 01 02 62 F2"
+    frames:
+      - description: "Send terminate workout screen command"
+        hex_bytes: "F1 76 04 13 02 01 02 62 F2"
+        breakdown:
+          - "F1: Start flag"
+          - "76: CSAFE_SETPMCFG_CMD"
+          - "04: Wrapper byte count (4 bytes)"
+          - "13: PM_SET_SCREENSTATE"
+          - "02: Command byte count"
+          - "01: SCREENTYPE_WORKOUT"
+          - "02: SCREENVALUEWORKOUT_TERMINATEWORKOUT"
+          - "62: Checksum"
+          - "F2: Stop flag"
+
+# =============================================================================
+#  Force Curve Data Collection (pp88-91)
+# =============================================================================
+force_curve:
+  description: >
+    To collect force curve data, poll PM_GET_STROKESTATE until RECOVERY_STATE
+    (4) is entered, then read all available force curve data using
+    PM_GET_FORCEPLOTDATA. Multiple reads may be needed — the first byte of
+    the response indicates how many bytes of valid data remain.
+  get_stroke_state:
+    command: "PM_GET_STROKESTATE"
+    command_id: 0xBF
+    wrapper: "CSAFE_GETPMCFG_CMD (0x1A)"
+    request_hex: "F1 1A 01 BF A4 F2"
+    response_states:
+      0: "WAITING_FOR_WHEEL_TO_REACH_MIN_SPEED_STATE"
+      1: "WAITING_FOR_WHEEL_TO_ACCELERATE_STATE"
+      2: "DRIVING_STATE"
+      3: "DWELLING_AFTER_DRIVE_STATE"
+      4: "RECOVERY_STATE — read force curve data now"
+  get_force_plot_data:
+    command: "PM_GET_FORCEPLOTDATA"
+    command_id: 0x6B
+    wrapper: "CSAFE_GETPMCFG_CMD (0x1A)"
+    request_hex: "F1 1A 03 6B 01 14 67 F2"
+    request_breakdown:
+      - "1A: CSAFE_GETPMCFG_CMD (PM-specific wrapper)"
+      - "03: Wrapper byte count"
+      - "6B: PM_GET_FORCEPLOTDATA"
+      - "01: Command byte count"
+      - "14: Bytes to read (20)"
+    response_format:
+      - "First byte: number of valid data bytes returned"
+      - "Subsequent: 16-bit little-endian force values (2 bytes each)"
+      - "Trailing zeros: padding (ignore)"
+    note: >
+      Keep reading until the "bytes read" count returns 0 or is less than
+      requested. Force values are in arbitrary units (relative force).
+      Each read returns up to 20 bytes of data (10 force samples).
+
+# =============================================================================
+#  Recovery Heart Rate
+# =============================================================================
+recovery_heart_rate:
+  description: >
+    After a workout ends, the PM can display a recovery heart rate screen.
+    The recovery HR is measured by taking the heart rate at workout end and
+    again after a recovery period (typically 60 seconds). The PM calculates
+    and displays the difference.
+  monitoring:
+    description: >
+      Monitor WorkoutState — when it transitions to WORKOUTEND (10), the
+      PM begins the recovery HR countdown if a heart rate monitor is
+      connected. The recovery HR result can be read via BLE notifications
+      on the rowing status characteristics.
+  related_commands:
+    - "PM_GET_WORKOUTSTATE — poll to detect workout end"
+    - "PM_GET_RESTTIME — check recovery countdown"
+  ble_notifications:
+    description: >
+      Smart BLE notifications on the general status and additional status
+      characteristics provide automatic workout state updates, making
+      polling unnecessary when using BLE.
+
+# =============================================================================
+#  Workout Parameter Limits (from commands_public.yaml, Tables 18-19)
+# =============================================================================
+workout_limits:
+  description: "Constraints on programmed workout parameters"
+  time:
+    minimum: "0:00:20"
+    maximum: "9:59:59"
+    unit: "HH:MM:SS"
+    set_command: "CSAFE_SETTWORK_CMD (0x20)"
+  distance:
+    minimum_meters: 100
+    maximum_meters: 50000
+    maximum_meters_bikeerg: 100000
+    unit: "meters"
+    set_command: "CSAFE_SETHORIZONTAL_CMD (0x21)"
+  split_duration:
+    minimum_time: "0:00:20"
+    minimum_distance_meters: 100
+    max_splits_pm3_pm4: 30
+    max_splits_pm5: 50
+    rule: "Split duration must not cause total splits to exceed the maximum"
+    set_command: "PM_SET_SPLITDURATION (0x05)"
+  intervals:
+    max_variable_intervals_pm5: 50
+    max_variable_intervals_pm3_pm4: 30
+    rest_minimum_seconds: 0
+    note: "Fixed interval workouts have unlimited repeats (user terminates)"
+
+# =============================================================================
+#  Workout Type Reference Table
+# =============================================================================
+workout_type_reference:
+  description: >
+    Quick reference mapping WorkoutType enum values to programming approach.
+    See workout_types section above for full programming sequences.
+  types:
+    - value: 0x00
+      name: "JUSTROW_NOSPLITS"
+      approach: "proprietary"
+      notes: "Free row without splits"
+    - value: 0x01
+      name: "JUSTROW_SPLITS"
+      approach: "proprietary"
+      notes: "Free row with automatic splits"
+    - value: 0x02
+      name: "FIXEDDIST_NOSPLITS"
+      approach: "proprietary"
+      notes: "Fixed distance without splits"
+    - value: 0x03
+      name: "FIXEDDIST_SPLITS"
+      approach: "proprietary"
+      notes: "Fixed distance with splits — see fixed_distance"
+    - value: 0x04
+      name: "FIXEDTIME_NOSPLITS"
+      approach: "proprietary"
+      notes: "Fixed time without splits"
+    - value: 0x05
+      name: "FIXEDTIME_SPLITS"
+      approach: "proprietary"
+      notes: "Fixed time with splits — see fixed_time"
+    - value: 0x06
+      name: "FIXEDTIME_INTERVAL"
+      approach: "proprietary"
+      notes: "Fixed time intervals — see fixed_time_interval"
+    - value: 0x07
+      name: "FIXEDDIST_INTERVAL"
+      approach: "proprietary"
+      notes: "Fixed distance intervals — see fixed_distance_interval"
+    - value: 0x08
+      name: "VARIABLE_INTERVAL"
+      approach: "proprietary"
+      notes: "Variable intervals — see variable_interval"
+    - value: 0x09
+      name: "VARIABLE_UNDEFINEDREST_INTERVAL"
+      approach: "proprietary"
+      notes: "Variable intervals, undefined rest — see variable_interval_undefined_rest"
+    - value: 0x0A
+      name: "FIXEDCALORIE_SPLITS"
+      approach: "proprietary"
+      notes: "Fixed calorie with splits — see fixed_calories"
+    - value: 0x0B
+      name: "FIXEDWATTMINUTE_SPLITS"
+      approach: "proprietary"
+      notes: "Fixed watt-minute with splits"
+    - value: 0x0C
+      name: "FIXEDCALS_INTERVAL"
+      approach: "proprietary"
+      notes: "Fixed calorie intervals — see fixed_calorie_interval"

@@ -78,6 +78,16 @@ repos:
       - id: ruff-format
         name: Ruff (format Python)
 
+  # Rust formatting (cargo fmt)
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Rust format (cargo fmt)
+        entry: cargo fmt -p csafe-codec --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
   # mypy: Type checking for Python
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.1
@@ -85,7 +95,7 @@ repos:
       - id: mypy
         name: mypy (type check Python)
         args: ['--strict']
-        files: ^packages/src/
+        files: ^packages/concept2mqtt/src/
         additional_dependencies:
           - pydantic>=2.10.0
           - pydantic-settings>=2.6.0

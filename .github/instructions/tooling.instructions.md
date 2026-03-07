@@ -19,7 +19,7 @@ Run `task --list` to see all available tasks. Key tasks for development:
 | Need                          | Command                                      |
 | ----------------------------- | -------------------------------------------- |
 | Run all unit tests            | `task test:unit`                             |
-| Run a specific test file      | `task test:file -- packages/tests/unit/test_foo.py`   |
+| Run a specific test file      | `task test:file -- packages/concept2mqtt/tests/unit/test_foo.py`   |
 | Run tests matching a pattern  | `task test:file -- -k test_my_function`      |
 | Run tests with coverage       | `task test:cov`                              |
 | Lint (ruff check + format)    | `task lint`                                  |
@@ -36,13 +36,13 @@ Run `task --list` to see all available tasks. Key tasks for development:
 For one-off commands not covered by the Taskfile, use `uv run` from the repo root:
 
 ```bash
-uv run pytest packages/tests/unit/test_foo.py -v
-uv run mypy packages/src/concept2mqtt/_health.py
-uv run ruff check packages/src/
+uv run pytest packages/concept2mqtt/tests/unit/test_foo.py -v
+uv run mypy packages/concept2mqtt/src/concept2mqtt/_health.py
+uv run ruff check packages/concept2mqtt/src/
 
 # WRONG — never do this
-python -m pytest packages/tests/unit/test_foo.py -v
-python packages/tests/scripts/summarize_tests.py
+python -m pytest packages/concept2mqtt/tests/unit/test_foo.py -v
+python packages/concept2mqtt/tests/scripts/summarize_tests.py
 ```
 
 ## Why

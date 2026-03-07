@@ -9,7 +9,7 @@
 version: '3'
 
 vars:
-  PKG: packages
+  PKG: packages/concept2mqtt
   MODULE_NAME: 'concept2mqtt'
 
   # Guard vars: detect whether test files exist.
@@ -175,11 +175,11 @@ tasks:
         uv run pytest {{.PKG}}/tests/unit/ -v --tb=short --junitxml=results-unit.xml
 
   test:file:
-    desc: 'Run specific test file or pattern (e.g.: task test:file -- packages/tests/unit/test_errors.py)'
+    desc: 'Run specific test file or pattern (e.g.: task test:file -- packages/concept2mqtt/tests/unit/test_errors.py)'
     cmds:
       - |
         if [ -z "{{.CLI_ARGS}}" ]; then
-          echo "Usage: task test:file -- packages/tests/unit/test_foo.py" >&2
+          echo "Usage: task test:file -- packages/concept2mqtt/tests/unit/test_foo.py" >&2
           echo "   or: task test:file -- -k test_my_function" >&2
           exit 1
         fi
@@ -234,11 +234,14 @@ tasks:
       - uv run mypy {{.PKG}}/src/
 
   check:
-    desc: Run all checks (lint + typecheck + test)
+    desc: Run all checks (lint + typecheck + test + Rust)
     cmds:
       - task: lint
       - task: typecheck
       - task: test
+      - task: csafe:fmt
+      - task: csafe:lint
+      - task: csafe:test
 
   pre-pr:
     desc: Run all pre-PR quality gates (pre-commit + lint + typecheck + tests + coverage + complexity + similarity)
@@ -249,6 +252,9 @@ tasks:
       - task: test
       - task: complexity
       - task: similarity
+      - task: csafe:fmt
+      - task: csafe:lint
+      - task: csafe:test
 
   # ===========================================================================
   # Documentation
@@ -310,6 +316,36 @@ tasks:
       - echo "SBOM written to dist/{{.MODULE_NAME}}.cdx.json"
 
   # ===========================================================================
+  # Rust / csafe-codec
+  # ===========================================================================
+
+  csafe:test:
+    desc: Run Rust tests for csafe-codec
+    cmds:
+      - cargo test -p csafe-codec
+
+  csafe:build:
+    desc: Build csafe-codec Python extension (development mode)
+    dir: packages/csafe-codec
+    cmds:
+      - maturin develop --uv
+
+  csafe:fmt:
+    desc: Check Rust formatting
+    cmds:
+      - cargo fmt -p csafe-codec -- --check
+
+  csafe:fmt:fix:
+    desc: Fix Rust formatting
+    cmds:
+      - cargo fmt -p csafe-codec
+
+  csafe:lint:
+    desc: Run Rust linter (clippy)
+    cmds:
+      - cargo clippy -p csafe-codec -- -D warnings
+
+  # ===========================================================================
   # CI Helpers
   # ===========================================================================
 
@@ -342,6 +378,14 @@ tasks:
           exit 0
         fi
         uv run pytest {{.PKG}}/tests/integration/ -v --tb=short -m integration --junitxml=results-integration.xml
+
+  ci:rust:
+    desc: CI Rust checks (fmt + clippy + test + maturin build verify)
+    cmds:
+      - task: csafe:fmt
+      - task: csafe:lint
+      - task: csafe:test
+      - maturin build --manifest-path packages/csafe-codec/Cargo.toml
 
   ci:lint:
     desc: CI lint task (strict)

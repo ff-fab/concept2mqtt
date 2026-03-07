@@ -11,7 +11,8 @@
       "moby": false
     },
     "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/rust:1": {}
   },
 
   "remoteEnv": {
@@ -84,6 +85,12 @@
           "editor.formatOnSave": true
         },
 
+        // Rust formatting
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer",
+          "editor.formatOnSave": true
+        },
+
         // File consistency
         "files.eol": "\n",
         "files.insertFinalNewline": true,
@@ -95,13 +102,17 @@
         "python.linting.pylintEnabled": false,
         "python.linting.mypyEnabled": true,
         "python.analysis.typeCheckingMode": "strict",
-        "python.analysis.extraPaths": ["packages/src", "packages"],
+        "python.analysis.extraPaths": ["packages/concept2mqtt/src"],
 
         // Python testing (pytest)
         "python.testing.pytestEnabled": true,
         "python.testing.unittestEnabled": false,
-        "python.testing.pytestArgs": ["tests", "-v", "--tb=short"],
-        "python.testing.cwd": "${workspaceFolder}/packages",
+        "python.testing.pytestArgs": [
+          "packages/concept2mqtt/tests",
+          "-v",
+          "--tb=short"
+        ],
+        "python.testing.cwd": "${workspaceFolder}",
 
         // Coverage Gutters - gutter icons + subtle ruler indicators
         "coverage-gutters.coverageFileNames": [
@@ -126,7 +137,8 @@
           "**/dist": true,
           "**/.venv": true,
           "**/.mypy_cache": true,
-          "**/build": true
+          "**/build": true,
+          "**/target": true
         },
 
         // Hide intermediate coverage files
@@ -163,7 +175,8 @@
         "ryanluker.vscode-coverage-gutters",
         "task.vscode-task",
         "planet57.vscode-beads",
-        "github.vscode-pull-request-github"
+        "github.vscode-pull-request-github",
+        "rust-lang.rust-analyzer"
       ]
     }
   },

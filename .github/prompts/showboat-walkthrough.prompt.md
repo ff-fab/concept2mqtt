@@ -63,13 +63,13 @@ For each section of the walkthrough:
 
    ```bash
    # Show a specific function or class
-   showboat exec docs/planning/walkthrough.md bash "sed -n '10,35p' packages/src/<module_name>/core.py"
+   showboat exec docs/planning/walkthrough.md bash "sed -n '10,35p' packages/concept2mqtt/src/<module_name>/core.py"
 
    # Show a key pattern with grep context
-   showboat exec docs/planning/walkthrough.md bash "grep -n -A 10 'class MyClass' packages/src/<module_name>/core.py"
+   showboat exec docs/planning/walkthrough.md bash "grep -n -A 10 'class MyClass' packages/concept2mqtt/src/<module_name>/core.py"
 
    # Show a whole short file
-   showboat exec docs/planning/walkthrough.md bash "cat packages/src/<module_name>/config.py"
+   showboat exec docs/planning/walkthrough.md bash "cat packages/concept2mqtt/src/<module_name>/config.py"
    ```
 
 3. **Add connecting commentary** between snippets, explaining:

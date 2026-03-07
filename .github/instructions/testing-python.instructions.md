@@ -1,6 +1,6 @@
 ---
 description: 'Python testing - pytest patterns'
-applyTo: 'packages/tests/**/*.py'
+applyTo: 'packages/concept2mqtt/tests/**/*.py'
 ---
 
 # Testing Instructions

@@ -1,3 +1,7 @@
+# Rust build artifacts
+/target/
+packages/csafe-codec/target/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

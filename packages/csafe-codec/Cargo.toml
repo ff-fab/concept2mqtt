@@ -1,0 +1,15 @@
+[package]
+name = "csafe-codec"
+version = "0.1.0"
+edition = "2021"
+description = "CSAFE protocol codec for Concept2 PM5 rowing monitors"
+license = "MIT"
+repository = "https://github.com/ff-fab/concept2mqtt"
+readme = "README.md"
+
+[lib]
+name = "csafe_codec"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.24", features = ["extension-module"] }

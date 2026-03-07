@@ -94,6 +94,29 @@ jobs:
             coverage.json
           retention-days: 30
 
+  rust:
+    name: 'Rust Checks (fmt + clippy + test)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare runner for devcontainer
+        run: mkdir -p ~/.ssh
+
+      - name: Log in to GHCR (for devcontainer cache)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Rust checks inside devcontainer
+        uses: devcontainers/ci@v0.3
+        with:
+          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}
+          push: never
+          runCmd: task ci:rust
+
   complexity:
     name: 'Code Quality (Complexity & Similarity)'
     runs-on: ubuntu-latest

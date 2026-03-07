@@ -379,6 +379,14 @@ tasks:
         fi
         uv run pytest {{.PKG}}/tests/integration/ -v --tb=short -m integration --junitxml=results-integration.xml
 
+  ci:rust:
+    desc: CI Rust checks (fmt + clippy + test + maturin build verify)
+    cmds:
+      - task: csafe:fmt
+      - task: csafe:lint
+      - task: csafe:test
+      - maturin build --manifest-path packages/csafe-codec/Cargo.toml
+
   ci:lint:
     desc: CI lint task (strict)
     cmds:

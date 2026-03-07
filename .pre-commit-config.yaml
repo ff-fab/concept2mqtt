@@ -85,7 +85,7 @@ repos:
       - id: mypy
         name: mypy (type check Python)
         args: ['--strict']
-        files: ^packages/src/
+        files: ^packages/concept2mqtt/src/
         additional_dependencies:
           - pydantic>=2.10.0
           - pydantic-settings>=2.6.0

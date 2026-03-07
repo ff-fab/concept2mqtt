@@ -91,7 +91,7 @@ toggle.name = "Switch to dark mode"
 [project.plugins.autorefs]
 
 [project.plugins.mkdocstrings.handlers.python]
-paths = ["packages/src"]
+paths = ["packages/concept2mqtt/src"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
 show_source = true

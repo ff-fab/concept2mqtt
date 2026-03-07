@@ -122,6 +122,10 @@ uv tool install beads-mcp 2>/dev/null || echo "⚠️  beads-mcp install had iss
 echo "🚢 Installing showboat..."
 uv tool install showboat 2>/dev/null || echo "⚠️  showboat install had issues, continuing..."
 
+# Install maturin — PEP 517 build backend for Rust/PyO3 Python extensions
+echo "🦀 Installing maturin (Rust→Python build tool)..."
+uv tool install maturin 2>/dev/null || echo "⚠️  maturin install had issues, continuing..."
+
 # Initialize beads issue tracker if not already done
 cd /workspace
 if [ ! -d ".beads" ]; then

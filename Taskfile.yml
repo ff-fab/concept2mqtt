@@ -324,6 +324,11 @@ tasks:
     cmds:
       - cargo test -p csafe-codec
 
+  csafe:test:python:
+    desc: Run Python binding tests for csafe-codec
+    cmds:
+      - uv run pytest packages/csafe-codec/tests/ -v
+
   csafe:build:
     desc: Build csafe-codec Python extension (development mode)
     dir: packages/csafe-codec

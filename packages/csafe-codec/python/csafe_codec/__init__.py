@@ -1,6 +1,11 @@
 """CSAFE protocol codec for Concept2 PM5 rowing monitors."""
 
 from csafe_codec._native import (
+    EXTENDED_START,
+    MAX_FRAME_SIZE,
+    STANDARD_START,
+    STOP,
+    STUFF_MARKER,
     __version__,
     build_standard_frame,
     compute_checksum,
@@ -11,6 +16,11 @@ from csafe_codec._native import (
 )
 
 __all__ = [
+    "EXTENDED_START",
+    "MAX_FRAME_SIZE",
+    "STANDARD_START",
+    "STOP",
+    "STUFF_MARKER",
     "__version__",
     "build_standard_frame",
     "compute_checksum",

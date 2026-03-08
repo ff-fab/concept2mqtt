@@ -10,6 +10,15 @@ pub mod framing;
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
+    // Protocol constants
+    m.add("EXTENDED_START", framing::EXTENDED_START)?;
+    m.add("STANDARD_START", framing::STANDARD_START)?;
+    m.add("STOP", framing::STOP)?;
+    m.add("STUFF_MARKER", framing::STUFF_MARKER)?;
+    m.add("MAX_FRAME_SIZE", framing::MAX_FRAME_SIZE)?;
+
+    // Functions
     m.add_function(wrap_pyfunction!(py_stuff_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(py_unstuff_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(py_compute_checksum, m)?)?;

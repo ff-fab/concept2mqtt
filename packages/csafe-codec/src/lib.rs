@@ -15,6 +15,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_compute_checksum, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate_checksum, m)?)?;
     m.add_function(wrap_pyfunction!(py_build_standard_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_standard_frame, m)?)?;
     Ok(())
 }
 
@@ -52,6 +53,16 @@ fn py_validate_checksum(data: &[u8], expected: u8) -> bool {
 #[pyfunction(name = "build_standard_frame")]
 fn py_build_standard_frame(contents: &[u8]) -> PyResult<Vec<u8>> {
     framing::build_standard_frame(contents)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Parse a standard CSAFE frame from wire bytes, returning the raw contents.
+///
+/// Raises ``ValueError`` on missing flags, empty frames, unstuffing errors,
+/// or checksum mismatches.
+#[pyfunction(name = "parse_standard_frame")]
+fn py_parse_standard_frame(frame: &[u8]) -> PyResult<Vec<u8>> {
+    framing::parse_standard_frame(frame)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 

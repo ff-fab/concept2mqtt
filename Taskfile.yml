@@ -242,6 +242,7 @@ tasks:
       - task: csafe:fmt
       - task: csafe:lint
       - task: csafe:test
+      - task: csafe:test:python
 
   pre-pr:
     desc: Run all pre-PR quality gates (pre-commit + lint + typecheck + tests + coverage + complexity + similarity)
@@ -255,6 +256,7 @@ tasks:
       - task: csafe:fmt
       - task: csafe:lint
       - task: csafe:test
+      - task: csafe:test:python
 
   # ===========================================================================
   # Documentation
@@ -326,6 +328,7 @@ tasks:
 
   csafe:test:python:
     desc: Run Python binding tests for csafe-codec
+    deps: [csafe:build]
     cmds:
       - uv run pytest packages/csafe-codec/tests/ -v
 

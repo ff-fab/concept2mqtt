@@ -22,18 +22,23 @@ class TestConstants:
 
     def test_standard_start(self) -> None:
         assert csafe_codec.STANDARD_START == 0xF1
+        assert isinstance(csafe_codec.STANDARD_START, int)
 
     def test_extended_start(self) -> None:
         assert csafe_codec.EXTENDED_START == 0xF0
+        assert isinstance(csafe_codec.EXTENDED_START, int)
 
     def test_stop(self) -> None:
         assert csafe_codec.STOP == 0xF2
+        assert isinstance(csafe_codec.STOP, int)
 
     def test_stuff_marker(self) -> None:
         assert csafe_codec.STUFF_MARKER == 0xF3
+        assert isinstance(csafe_codec.STUFF_MARKER, int)
 
     def test_max_frame_size(self) -> None:
         assert csafe_codec.MAX_FRAME_SIZE == 120
+        assert isinstance(csafe_codec.MAX_FRAME_SIZE, int)
 
     def test_version_is_set(self) -> None:
         assert isinstance(csafe_codec.__version__, str)

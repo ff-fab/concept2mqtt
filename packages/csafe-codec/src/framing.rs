@@ -158,6 +158,15 @@ impl std::fmt::Display for FrameError {
 /// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
 /// the 120-byte protocol limit.
 pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
+    // Fast reject: raw contents alone exceed the frame limit, so the
+    // stuffed frame (which is >= contents) certainly will too.  Avoids
+    // an unnecessary O(n) allocation for oversized inputs.
+    if contents.len() > MAX_FRAME_SIZE {
+        return Err(FrameError::TooLarge {
+            actual: contents.len(),
+        });
+    }
+
     let stuffed_contents = stuff_bytes(contents);
     let checksum = compute_checksum(contents);
     let stuffed_checksum = stuff_bytes(&[checksum]);
@@ -554,5 +563,14 @@ mod tests {
             err.to_string(),
             "frame size 130 bytes exceeds 120-byte limit"
         );
+    }
+
+    #[test]
+    fn frame_huge_input_fast_reject() {
+        // Inputs larger than MAX_FRAME_SIZE are rejected immediately
+        // without allocating a stuffed buffer.
+        let payload = vec![0x01; 1024];
+        let result = build_standard_frame(&payload);
+        assert!(result.is_err());
     }
 }

@@ -48,7 +48,7 @@ impl std::fmt::Display for StuffingError {
 /// two-byte escape sequence `[0xF3, byte − 0xF0]`.
 pub fn stuff_bytes(data: &[u8]) -> Vec<u8> {
     // Worst case: every byte is stuffed → 2× input length.
-    let mut out = Vec::with_capacity(data.len());
+    let mut out = Vec::with_capacity(data.len().saturating_mul(2));
     for &b in data {
         if STUFF_RANGE.contains(&b) {
             out.push(STUFF_MARKER);

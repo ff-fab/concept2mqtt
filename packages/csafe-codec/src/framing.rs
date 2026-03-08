@@ -1,4 +1,5 @@
-// CSAFE frame-level primitives: byte stuffing, checksum, and frame building.
+// CSAFE frame-level primitives: byte stuffing, checksum, frame building,
+// and frame parsing.
 //
 // Byte stuffing (protocol.yaml §byte_stuffing, Table 6) ensures the four
 // flag bytes 0xF0–0xF3 never appear inside frame contents or the checksum.
@@ -12,6 +13,10 @@
 // Standard frame (protocol.yaml §standard, Figure 1) layout:
 //   [0xF1]  [stuffed contents]  [stuffed checksum]  [0xF2]
 // The total wire size (including flags) must not exceed 120 bytes.
+//
+// Parsing (protocol.yaml §error_recovery): if a start or stop byte is
+// missed, the frame is discarded and resynchronisation occurs at the next
+// frame boundary.  No ACK/NAK at the frame level.
 
 // ── Flag constants ──────────────────────────────────────────────────────
 
@@ -182,6 +187,109 @@ pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
     frame.extend_from_slice(&stuffed_checksum);
     frame.push(STOP);
     Ok(frame)
+}
+
+// ── Frame parsing ───────────────────────────────────────────────────────
+
+/// Errors that can occur when parsing a CSAFE frame from wire bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseError {
+    /// The first byte is not a recognised start flag (0xF0 or 0xF1).
+    MissingStartFlag { actual: u8 },
+    /// The last byte is not the stop flag (0xF2).
+    MissingStopFlag { actual: u8 },
+    /// The frame is too short to contain even a checksum (start + stop only).
+    EmptyFrame,
+    /// Byte-unstuffing failed inside the frame body.
+    Unstuffing(StuffingError),
+    /// The checksum computed over the contents does not match the frame's
+    /// checksum byte.
+    BadChecksum { expected: u8, actual: u8 },
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::MissingStartFlag { actual } => {
+                write!(f, "expected start flag 0xF0 or 0xF1, got 0x{actual:02X}")
+            }
+            ParseError::MissingStopFlag { actual } => {
+                write!(f, "expected stop flag 0xF2, got 0x{actual:02X}")
+            }
+            ParseError::EmptyFrame => write!(f, "frame contains no data or checksum"),
+            ParseError::Unstuffing(e) => write!(f, "unstuffing error: {e}"),
+            ParseError::BadChecksum { expected, actual } => {
+                write!(
+                    f,
+                    "checksum mismatch: frame has 0x{expected:02X}, computed 0x{actual:02X}"
+                )
+            }
+        }
+    }
+}
+
+impl From<StuffingError> for ParseError {
+    fn from(e: StuffingError) -> Self {
+        ParseError::Unstuffing(e)
+    }
+}
+
+/// Parse a standard CSAFE frame from wire bytes, returning the raw
+/// (unstuffed) frame contents.
+///
+/// Expects the full frame including start/stop flags:
+/// `[0xF1] [stuffed body + stuffed checksum] [0xF2]`
+///
+/// Steps:
+/// 1. Validate start flag (0xF1) and stop flag (0xF2).
+/// 2. Unstuff the body between the flags.
+/// 3. Split the last byte as the checksum.
+/// 4. Validate the checksum against the contents.
+/// 5. Return the contents (without the checksum byte).
+///
+/// # Errors
+///
+/// Returns [`ParseError`] for missing flags, empty frames, unstuffing
+/// failures, or checksum mismatches.
+pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
+    // At minimum we need: start(1) + checksum(1..2 stuffed) + stop(1) = 3 bytes.
+    // But we check structurally instead.
+    if frame.is_empty() {
+        return Err(ParseError::EmptyFrame);
+    }
+
+    let start = frame[0];
+    if start != STANDARD_START {
+        return Err(ParseError::MissingStartFlag { actual: start });
+    }
+
+    let stop = *frame.last().unwrap(); // safe: frame is non-empty
+    if stop != STOP {
+        return Err(ParseError::MissingStopFlag { actual: stop });
+    }
+
+    // Body sits between start and stop flags.
+    let stuffed_body = &frame[1..frame.len() - 1];
+
+    // Unstuff the body (contents + checksum together).
+    let unstuffed = unstuff_bytes(stuffed_body)?; // ? uses From<StuffingError>
+
+    // The last unstuffed byte is the checksum; everything before it is contents.
+    if unstuffed.is_empty() {
+        return Err(ParseError::EmptyFrame);
+    }
+    let (contents, checksum_slice) = unstuffed.split_at(unstuffed.len() - 1);
+    let frame_checksum = checksum_slice[0];
+
+    let computed = compute_checksum(contents);
+    if computed != frame_checksum {
+        return Err(ParseError::BadChecksum {
+            expected: frame_checksum,
+            actual: computed,
+        });
+    }
+
+    Ok(contents.to_vec())
 }
 
 // ── Unit tests ──────────────────────────────────────────────────────────
@@ -572,5 +680,193 @@ mod tests {
         let payload = vec![0x01; 1024];
         let result = build_standard_frame(&payload);
         assert!(result.is_err());
+    }
+
+    // -- parse_standard_frame ---------------------------------------------
+
+    #[test]
+    fn parse_empty_input() {
+        assert_eq!(parse_standard_frame(&[]), Err(ParseError::EmptyFrame));
+    }
+
+    #[test]
+    fn parse_missing_start_flag() {
+        // Starts with 0x00 instead of 0xF1.
+        assert_eq!(
+            parse_standard_frame(&[0x00, 0x42, 0x42, 0xF2]),
+            Err(ParseError::MissingStartFlag { actual: 0x00 })
+        );
+    }
+
+    #[test]
+    fn parse_extended_start_rejected() {
+        // Extended start flag 0xF0 is not a standard frame.
+        assert_eq!(
+            parse_standard_frame(&[0xF0, 0x42, 0x42, 0xF2]),
+            Err(ParseError::MissingStartFlag { actual: 0xF0 })
+        );
+    }
+
+    #[test]
+    fn parse_missing_stop_flag() {
+        // Ends with 0xFF instead of 0xF2.
+        assert_eq!(
+            parse_standard_frame(&[0xF1, 0x42, 0x42, 0xFF]),
+            Err(ParseError::MissingStopFlag { actual: 0xFF })
+        );
+    }
+
+    #[test]
+    fn parse_only_flags_no_checksum() {
+        // [0xF1, 0xF2] — start and stop but no body at all.
+        assert_eq!(
+            parse_standard_frame(&[0xF1, 0xF2]),
+            Err(ParseError::EmptyFrame)
+        );
+    }
+
+    #[test]
+    fn parse_empty_contents_with_checksum() {
+        // Empty contents → checksum = 0x00.
+        // Wire: [0xF1, 0x00, 0xF2]
+        let contents = parse_standard_frame(&[0xF1, 0x00, 0xF2]).unwrap();
+        let empty: Vec<u8> = vec![];
+        assert_eq!(contents, empty);
+    }
+
+    #[test]
+    fn parse_single_command() {
+        // GETSERIAL 0x91.  Checksum = 0x91.
+        // Wire: [0xF1, 0x91, 0x91, 0xF2]
+        let contents = parse_standard_frame(&[0xF1, 0x91, 0x91, 0xF2]).unwrap();
+        assert_eq!(contents, vec![0x91]);
+    }
+
+    #[test]
+    fn parse_multi_byte_payload() {
+        // Payload [0x01, 0x02], checksum = 0x03.
+        let contents = parse_standard_frame(&[0xF1, 0x01, 0x02, 0x03, 0xF2]).unwrap();
+        assert_eq!(contents, vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn parse_stuffed_contents() {
+        // Payload [0xF1] → stuffed to [0xF3, 0x01].
+        // Checksum = 0xF1 → stuffed to [0xF3, 0x01].
+        // Wire: [0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]
+        let contents = parse_standard_frame(&[0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]).unwrap();
+        assert_eq!(contents, vec![0xF1]);
+    }
+
+    #[test]
+    fn parse_bad_checksum() {
+        // Payload [0x01], correct checksum would be 0x01, but we say 0xFF.
+        let result = parse_standard_frame(&[0xF1, 0x01, 0xFF, 0xF2]);
+        assert_eq!(
+            result,
+            Err(ParseError::BadChecksum {
+                expected: 0xFF,
+                actual: 0x01
+            })
+        );
+    }
+
+    #[test]
+    fn parse_truncated_escape() {
+        // Wire: [0xF1, 0xF3, 0xF2] — 0xF3 followed immediately by stop flag.
+        // unstuff_bytes sees [0xF3] (just one byte) → TruncatedEscape.
+        let result = parse_standard_frame(&[0xF1, 0xF3, 0xF2]);
+        assert!(matches!(
+            result,
+            Err(ParseError::Unstuffing(
+                StuffingError::TruncatedEscape { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn parse_invalid_escape_offset() {
+        // Wire: [0xF1, 0xF3, 0x10, 0xF2] — offset 0x10 is invalid.
+        let result = parse_standard_frame(&[0xF1, 0xF3, 0x10, 0xF2]);
+        assert!(matches!(
+            result,
+            Err(ParseError::Unstuffing(StuffingError::InvalidOffset { .. }))
+        ));
+    }
+
+    // -- build + parse roundtrip ------------------------------------------
+
+    #[test]
+    fn roundtrip_build_then_parse() {
+        let original = vec![0x91]; // GETSERIAL
+        let frame = build_standard_frame(&original).unwrap();
+        let recovered = parse_standard_frame(&frame).unwrap();
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn roundtrip_with_reserved_bytes() {
+        let original = vec![0xF0, 0xF1, 0xF2, 0xF3, 0x42];
+        let frame = build_standard_frame(&original).unwrap();
+        let recovered = parse_standard_frame(&frame).unwrap();
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn roundtrip_multi_byte() {
+        let original = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        let frame = build_standard_frame(&original).unwrap();
+        let recovered = parse_standard_frame(&frame).unwrap();
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn roundtrip_empty_contents() {
+        let original: Vec<u8> = vec![];
+        let frame = build_standard_frame(&original).unwrap();
+        let recovered = parse_standard_frame(&frame).unwrap();
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn roundtrip_all_single_bytes_via_frame() {
+        // Build and parse a frame for every possible single-byte payload.
+        for b in 0x00..=0xFFu8 {
+            let original = vec![b];
+            let frame = build_standard_frame(&original).unwrap();
+            let recovered = parse_standard_frame(&frame).unwrap();
+            assert_eq!(recovered, original, "roundtrip failed for byte 0x{b:02X}");
+        }
+    }
+
+    // -- parse error display ----------------------------------------------
+
+    #[test]
+    fn parse_error_display_missing_start() {
+        let err = ParseError::MissingStartFlag { actual: 0x00 };
+        assert_eq!(
+            err.to_string(),
+            "expected start flag 0xF0 or 0xF1, got 0x00"
+        );
+    }
+
+    #[test]
+    fn parse_error_display_bad_checksum() {
+        let err = ParseError::BadChecksum {
+            expected: 0xAA,
+            actual: 0xBB,
+        };
+        assert_eq!(
+            err.to_string(),
+            "checksum mismatch: frame has 0xAA, computed 0xBB"
+        );
+    }
+
+    #[test]
+    fn parse_error_from_stuffing_error() {
+        // Verify From<StuffingError> conversion works.
+        let stuffing_err = StuffingError::TruncatedEscape { position: 5 };
+        let parse_err: ParseError = stuffing_err.clone().into();
+        assert_eq!(parse_err, ParseError::Unstuffing(stuffing_err));
     }
 }

@@ -12,6 +12,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(py_stuff_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(py_unstuff_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(py_compute_checksum, m)?)?;
+    m.add_function(wrap_pyfunction!(py_validate_checksum, m)?)?;
     Ok(())
 }
 
@@ -29,6 +31,18 @@ fn py_stuff_bytes(data: &[u8]) -> Vec<u8> {
 #[pyfunction(name = "unstuff_bytes")]
 fn py_unstuff_bytes(data: &[u8]) -> PyResult<Vec<u8>> {
     framing::unstuff_bytes(data).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the CSAFE XOR checksum over frame contents.
+#[pyfunction(name = "compute_checksum")]
+fn py_compute_checksum(data: &[u8]) -> u8 {
+    framing::compute_checksum(data)
+}
+
+/// Validate a CSAFE checksum against frame contents.
+#[pyfunction(name = "validate_checksum")]
+fn py_validate_checksum(data: &[u8], expected: u8) -> bool {
+    framing::validate_checksum(data, expected)
 }
 
 #[cfg(test)]

@@ -2,6 +2,9 @@
 /target/
 packages/csafe-codec/target/
 
+# Personal learning docs (local-only)
+/docs/learning/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

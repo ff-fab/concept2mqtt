@@ -1,0 +1,573 @@
+use super::*;
+
+// -- stuff_bytes ------------------------------------------------------
+
+#[test]
+fn stuff_empty() {
+    let empty: Vec<u8> = vec![];
+    assert_eq!(stuff_bytes(&[]), empty);
+}
+
+#[test]
+fn stuff_no_reserved_bytes() {
+    let input = vec![0x00, 0x42, 0xEF, 0xFF];
+    assert_eq!(stuff_bytes(&input), input);
+}
+
+#[test]
+fn stuff_each_reserved_byte() {
+    // Table 6 — each reserved byte maps to [0xF3, offset].
+    assert_eq!(stuff_bytes(&[0xF0]), vec![0xF3, 0x00]);
+    assert_eq!(stuff_bytes(&[0xF1]), vec![0xF3, 0x01]);
+    assert_eq!(stuff_bytes(&[0xF2]), vec![0xF3, 0x02]);
+    assert_eq!(stuff_bytes(&[0xF3]), vec![0xF3, 0x03]);
+}
+
+#[test]
+fn stuff_mixed() {
+    let input = vec![0x01, 0xF1, 0x02, 0xF3, 0x03];
+    let expected = vec![0x01, 0xF3, 0x01, 0x02, 0xF3, 0x03, 0x03];
+    assert_eq!(stuff_bytes(&input), expected);
+}
+
+#[test]
+fn stuff_all_reserved_consecutive() {
+    let input = vec![0xF0, 0xF1, 0xF2, 0xF3];
+    let expected = vec![0xF3, 0x00, 0xF3, 0x01, 0xF3, 0x02, 0xF3, 0x03];
+    assert_eq!(stuff_bytes(&input), expected);
+}
+
+// -- unstuff_bytes ----------------------------------------------------
+
+#[test]
+fn unstuff_empty() {
+    let empty: Vec<u8> = vec![];
+    assert_eq!(unstuff_bytes(&[]).unwrap(), empty);
+}
+
+#[test]
+fn unstuff_no_escapes() {
+    let input = vec![0x00, 0x42, 0xEF, 0xFF];
+    assert_eq!(unstuff_bytes(&input).unwrap(), input);
+}
+
+#[test]
+fn unstuff_each_reserved_byte() {
+    assert_eq!(unstuff_bytes(&[0xF3, 0x00]).unwrap(), vec![0xF0]);
+    assert_eq!(unstuff_bytes(&[0xF3, 0x01]).unwrap(), vec![0xF1]);
+    assert_eq!(unstuff_bytes(&[0xF3, 0x02]).unwrap(), vec![0xF2]);
+    assert_eq!(unstuff_bytes(&[0xF3, 0x03]).unwrap(), vec![0xF3]);
+}
+
+#[test]
+fn unstuff_mixed() {
+    let input = vec![0x01, 0xF3, 0x01, 0x02, 0xF3, 0x03, 0x03];
+    let expected = vec![0x01, 0xF1, 0x02, 0xF3, 0x03];
+    assert_eq!(unstuff_bytes(&input).unwrap(), expected);
+}
+
+// -- round-trip -------------------------------------------------------
+
+#[test]
+fn roundtrip_identity() {
+    // stuff then unstuff should recover the original for any input.
+    let original = vec![0x00, 0xF0, 0x7F, 0xF3, 0xF1, 0xF2, 0xFF];
+    let stuffed = stuff_bytes(&original);
+    let recovered = unstuff_bytes(&stuffed).unwrap();
+    assert_eq!(recovered, original);
+}
+
+#[test]
+fn roundtrip_all_byte_values() {
+    let original: Vec<u8> = (0x00..=0xFF).collect();
+    let recovered = unstuff_bytes(&stuff_bytes(&original)).unwrap();
+    assert_eq!(recovered, original);
+}
+
+// -- error cases ------------------------------------------------------
+
+#[test]
+fn unstuff_truncated_escape() {
+    let err = unstuff_bytes(&[0x01, 0xF3]).unwrap_err();
+    assert_eq!(err, StuffingError::TruncatedEscape { position: 1 });
+}
+
+#[test]
+fn unstuff_invalid_offset() {
+    let err = unstuff_bytes(&[0xF3, 0x04]).unwrap_err();
+    assert_eq!(
+        err,
+        StuffingError::InvalidOffset {
+            position: 1,
+            offset: 0x04
+        }
+    );
+}
+
+#[test]
+fn unstuff_invalid_offset_high() {
+    let err = unstuff_bytes(&[0xF3, 0xFF]).unwrap_err();
+    assert_eq!(
+        err,
+        StuffingError::InvalidOffset {
+            position: 1,
+            offset: 0xFF
+        }
+    );
+}
+
+// -- compute_checksum -------------------------------------------------
+
+#[test]
+fn checksum_empty() {
+    assert_eq!(compute_checksum(&[]), 0x00);
+}
+
+#[test]
+fn checksum_single_byte() {
+    assert_eq!(compute_checksum(&[0x42]), 0x42);
+}
+
+#[test]
+fn checksum_two_bytes() {
+    // 0xAA ^ 0x55 = 0xFF
+    assert_eq!(compute_checksum(&[0xAA, 0x55]), 0xFF);
+}
+
+#[test]
+fn checksum_self_cancelling() {
+    // XOR of a byte with itself is 0.
+    assert_eq!(compute_checksum(&[0x37, 0x37]), 0x00);
+}
+
+#[test]
+fn checksum_spec_crosscheck() {
+    // pROWess cross-reference: XOR of frame contents [0x91] = 0x91.
+    // A real CSAFE GETSERIAL command (short command 0x91, no data).
+    assert_eq!(compute_checksum(&[0x91]), 0x91);
+}
+
+#[test]
+fn checksum_multi_byte_payload() {
+    // Simulated payload: [0x01, 0x02, 0x03, 0x04]
+    // 0x01 ^ 0x02 = 0x03; 0x03 ^ 0x03 = 0x00; 0x00 ^ 0x04 = 0x04
+    assert_eq!(compute_checksum(&[0x01, 0x02, 0x03, 0x04]), 0x04);
+}
+
+#[test]
+fn checksum_all_ff() {
+    // Three 0xFF bytes: 0xFF ^ 0xFF = 0x00; 0x00 ^ 0xFF = 0xFF
+    assert_eq!(compute_checksum(&[0xFF, 0xFF, 0xFF]), 0xFF);
+}
+
+// -- validate_checksum ------------------------------------------------
+
+#[test]
+fn validate_correct() {
+    let data = &[0x01, 0x02, 0x03, 0x04];
+    assert!(validate_checksum(data, 0x04));
+}
+
+#[test]
+fn validate_incorrect() {
+    let data = &[0x01, 0x02, 0x03, 0x04];
+    assert!(!validate_checksum(data, 0x05));
+}
+
+#[test]
+fn validate_empty_with_zero() {
+    assert!(validate_checksum(&[], 0x00));
+}
+
+#[test]
+fn validate_empty_with_nonzero() {
+    assert!(!validate_checksum(&[], 0x01));
+}
+
+// -- checksum + stuffing integration ----------------------------------
+
+#[test]
+fn checksum_then_stuff_roundtrip() {
+    // Simulate frame building: compute checksum, stuff the payload,
+    // stuff the checksum byte, then unstuff and validate.
+    let payload = vec![0x91]; // GETSERIAL short command
+    let csum = compute_checksum(&payload);
+    assert_eq!(csum, 0x91);
+
+    let stuffed_payload = stuff_bytes(&payload);
+    let stuffed_csum = stuff_bytes(&[csum]);
+
+    let recovered_payload = unstuff_bytes(&stuffed_payload).unwrap();
+    let recovered_csum_bytes = unstuff_bytes(&stuffed_csum).unwrap();
+
+    assert!(validate_checksum(
+        &recovered_payload,
+        recovered_csum_bytes[0]
+    ));
+}
+
+#[test]
+fn checksum_reserved_byte_roundtrip() {
+    // Payload that produces a checksum in the reserved range.
+    // 0xF1 ^ 0x00 = 0xF1 → checksum is 0xF1, needs stuffing.
+    let payload = vec![0xF1];
+    let csum = compute_checksum(&payload);
+    assert_eq!(csum, 0xF1);
+
+    // Checksum 0xF1 must be stuffed → [0xF3, 0x01]
+    let stuffed_csum = stuff_bytes(&[csum]);
+    assert_eq!(stuffed_csum, vec![0xF3, 0x01]);
+
+    // Unstuff recovers the original checksum
+    let recovered = unstuff_bytes(&stuffed_csum).unwrap();
+    assert!(validate_checksum(&payload, recovered[0]));
+}
+
+// -- build_standard_frame ---------------------------------------------
+
+#[test]
+fn frame_empty_contents() {
+    // Empty payload → checksum is 0x00 (no stuffing needed).
+    // [0xF1, 0x00, 0xF2] = 3 bytes
+    let frame = build_standard_frame(&[]).unwrap();
+    assert_eq!(frame, vec![0xF1, 0x00, 0xF2]);
+}
+
+#[test]
+fn frame_single_command() {
+    // GETSERIAL = 0x91.  Checksum = 0x91 (no stuffing needed).
+    // [0xF1, 0x91, 0x91, 0xF2]
+    let frame = build_standard_frame(&[0x91]).unwrap();
+    assert_eq!(frame, vec![0xF1, 0x91, 0x91, 0xF2]);
+}
+
+#[test]
+fn frame_multi_byte_payload() {
+    // Payload [0x01, 0x02] → checksum = 0x01 ^ 0x02 = 0x03.
+    // No reserved bytes → no stuffing.
+    // [0xF1, 0x01, 0x02, 0x03, 0xF2]
+    let frame = build_standard_frame(&[0x01, 0x02]).unwrap();
+    assert_eq!(frame, vec![0xF1, 0x01, 0x02, 0x03, 0xF2]);
+}
+
+#[test]
+fn frame_contents_need_stuffing() {
+    // Payload [0xF1] → stuffed to [0xF3, 0x01].
+    // Checksum = 0xF1 → stuffed to [0xF3, 0x01].
+    // [0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2] = 6 bytes
+    let frame = build_standard_frame(&[0xF1]).unwrap();
+    assert_eq!(frame, vec![0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]);
+}
+
+#[test]
+fn frame_checksum_needs_stuffing() {
+    // Payload [0xF0] → stuffed to [0xF3, 0x00].
+    // Checksum = 0xF0 → stuffed to [0xF3, 0x00].
+    let frame = build_standard_frame(&[0xF0]).unwrap();
+    assert_eq!(frame, vec![0xF1, 0xF3, 0x00, 0xF3, 0x00, 0xF2]);
+}
+
+#[test]
+fn frame_all_reserved_bytes() {
+    // Payload [0xF0, 0xF1, 0xF2, 0xF3].
+    // Stuffed contents: [0xF3,0x00, 0xF3,0x01, 0xF3,0x02, 0xF3,0x03] = 8 bytes.
+    // Checksum = 0xF0 ^ 0xF1 ^ 0xF2 ^ 0xF3 = 0x00 (no stuffing).
+    // Total: [0xF1, ..8 stuffed.., 0x00, 0xF2] = 11 bytes.
+    let frame = build_standard_frame(&[0xF0, 0xF1, 0xF2, 0xF3]).unwrap();
+    assert_eq!(
+        frame,
+        vec![0xF1, 0xF3, 0x00, 0xF3, 0x01, 0xF3, 0x02, 0xF3, 0x03, 0x00, 0xF2]
+    );
+}
+
+#[test]
+fn frame_starts_with_start_flag() {
+    let frame = build_standard_frame(&[0x42]).unwrap();
+    assert_eq!(frame[0], STANDARD_START);
+}
+
+#[test]
+fn frame_ends_with_stop_flag() {
+    let frame = build_standard_frame(&[0x42]).unwrap();
+    assert_eq!(*frame.last().unwrap(), STOP);
+}
+
+#[test]
+fn frame_checksum_is_valid() {
+    // Build a frame and verify the checksum embeds correctly.
+    let contents = &[0x01, 0x02, 0x03, 0x04]; // checksum = 0x04
+    let frame = build_standard_frame(contents).unwrap();
+    // Frame: [0xF1, 0x01, 0x02, 0x03, 0x04, 0x04, 0xF2]
+    // Extract: stuffed body [1..len-2], stuffed checksum [len-2..len-1]
+    // In this case no stuffing occurred, so body = frame[1..5], csum = frame[5].
+    let recovered_contents = &frame[1..frame.len() - 2];
+    let recovered_csum = frame[frame.len() - 2];
+    assert!(validate_checksum(recovered_contents, recovered_csum));
+}
+
+#[test]
+fn frame_no_flags_in_body() {
+    // A frame with reserved bytes in payload should have no raw
+    // flag bytes between start and stop.
+    let frame = build_standard_frame(&[0xF0, 0xF1, 0xF2, 0xF3]).unwrap();
+    let body = &frame[1..frame.len() - 1]; // between start and stop
+    for &b in body {
+        assert!(
+            !STUFF_RANGE.contains(&b) || b == STUFF_MARKER,
+            "unexpected raw flag byte 0x{b:02X} in frame body"
+        );
+    }
+}
+
+#[test]
+fn frame_too_large() {
+    // 120 bytes max.  Start(1) + stop(1) = 2 overhead.
+    // In the worst case every content byte is stuffed (2× expansion)
+    // plus the checksum may be stuffed (2 bytes).
+    // With 59 bytes of non-reserved content: stuffed = 59 bytes,
+    // checksum is 1 byte → total = 1 + 59 + 1 + 1 = 62.  Fine.
+    // Fill with 118 non-reserved bytes: stuffed = 118, checksum 1–2,
+    // total = 1 + 118 + 1 + 1 = 121 → too large.
+    let payload = vec![0x01; 118];
+    let result = build_standard_frame(&payload);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), FrameError::TooLarge { actual: 121 });
+}
+
+#[test]
+fn frame_exactly_at_limit() {
+    // 117 non-reserved content bytes.
+    // Checksum = XOR of 117 copies of 0x01 = 0x01 (odd count).
+    // Stuffed contents = 117, stuffed checksum = 1.
+    // Total = 1 + 117 + 1 + 1 = 120 → exactly at limit.
+    let payload = vec![0x01; 117];
+    let frame = build_standard_frame(&payload).unwrap();
+    assert_eq!(frame.len(), 120);
+}
+
+#[test]
+fn frame_reserved_payload_expansion() {
+    // All-0xF0 payload: each byte doubles.
+    // 55 bytes → stuffed to 110.  Checksum 0xF0 (odd count) → stuffed to 2.
+    // Total = 1 + 110 + 2 + 1 = 114 → fits.
+    let payload = vec![0xF0; 55];
+    let frame = build_standard_frame(&payload).unwrap();
+    assert_eq!(frame.len(), 114);
+
+    // 58 bytes → stuffed to 116.  Checksum 0x00 (even count) → 1 byte.
+    // Total = 1 + 116 + 1 + 1 = 119 → fits.
+    let payload = vec![0xF0; 58];
+    let frame = build_standard_frame(&payload).unwrap();
+    assert_eq!(frame.len(), 119);
+
+    // 59 bytes → stuffed to 118.  Checksum 0xF0 (odd count) → 2 bytes.
+    // Total = 1 + 118 + 2 + 1 = 122 → too large.
+    let payload = vec![0xF0; 59];
+    assert!(build_standard_frame(&payload).is_err());
+}
+
+#[test]
+fn frame_error_display() {
+    let err = FrameError::TooLarge { actual: 130 };
+    assert_eq!(
+        err.to_string(),
+        "frame size 130 bytes exceeds 120-byte limit"
+    );
+}
+
+#[test]
+fn frame_huge_input_fast_reject() {
+    // Inputs larger than MAX_FRAME_SIZE are rejected immediately
+    // without allocating a stuffed buffer.
+    let payload = vec![0x01; 1024];
+    let result = build_standard_frame(&payload);
+    assert!(result.is_err());
+}
+
+// -- parse_standard_frame ---------------------------------------------
+
+#[test]
+fn parse_empty_input() {
+    assert_eq!(parse_standard_frame(&[]), Err(ParseError::EmptyFrame));
+}
+
+#[test]
+fn parse_missing_start_flag() {
+    // Starts with 0x00 instead of 0xF1.
+    assert_eq!(
+        parse_standard_frame(&[0x00, 0x42, 0x42, 0xF2]),
+        Err(ParseError::MissingStartFlag { actual: 0x00 })
+    );
+}
+
+#[test]
+fn parse_extended_start_rejected() {
+    // Extended start flag 0xF0 is not a standard frame.
+    assert_eq!(
+        parse_standard_frame(&[0xF0, 0x42, 0x42, 0xF2]),
+        Err(ParseError::MissingStartFlag { actual: 0xF0 })
+    );
+}
+
+#[test]
+fn parse_missing_stop_flag() {
+    // Ends with 0xFF instead of 0xF2.
+    assert_eq!(
+        parse_standard_frame(&[0xF1, 0x42, 0x42, 0xFF]),
+        Err(ParseError::MissingStopFlag { actual: 0xFF })
+    );
+}
+
+#[test]
+fn parse_only_flags_no_checksum() {
+    // [0xF1, 0xF2] — start and stop but no body at all.
+    assert_eq!(
+        parse_standard_frame(&[0xF1, 0xF2]),
+        Err(ParseError::EmptyFrame)
+    );
+}
+
+#[test]
+fn parse_empty_contents_with_checksum() {
+    // Empty contents → checksum = 0x00.
+    // Wire: [0xF1, 0x00, 0xF2]
+    let contents = parse_standard_frame(&[0xF1, 0x00, 0xF2]).unwrap();
+    let empty: Vec<u8> = vec![];
+    assert_eq!(contents, empty);
+}
+
+#[test]
+fn parse_single_command() {
+    // GETSERIAL 0x91.  Checksum = 0x91.
+    // Wire: [0xF1, 0x91, 0x91, 0xF2]
+    let contents = parse_standard_frame(&[0xF1, 0x91, 0x91, 0xF2]).unwrap();
+    assert_eq!(contents, vec![0x91]);
+}
+
+#[test]
+fn parse_multi_byte_payload() {
+    // Payload [0x01, 0x02], checksum = 0x03.
+    let contents = parse_standard_frame(&[0xF1, 0x01, 0x02, 0x03, 0xF2]).unwrap();
+    assert_eq!(contents, vec![0x01, 0x02]);
+}
+
+#[test]
+fn parse_stuffed_contents() {
+    // Payload [0xF1] → stuffed to [0xF3, 0x01].
+    // Checksum = 0xF1 → stuffed to [0xF3, 0x01].
+    // Wire: [0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]
+    let contents = parse_standard_frame(&[0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]).unwrap();
+    assert_eq!(contents, vec![0xF1]);
+}
+
+#[test]
+fn parse_bad_checksum() {
+    // Payload [0x01], correct checksum would be 0x01, but we say 0xFF.
+    let result = parse_standard_frame(&[0xF1, 0x01, 0xFF, 0xF2]);
+    assert_eq!(
+        result,
+        Err(ParseError::BadChecksum {
+            expected: 0xFF,
+            actual: 0x01
+        })
+    );
+}
+
+#[test]
+fn parse_truncated_escape() {
+    // Wire: [0xF1, 0xF3, 0xF2] — 0xF3 followed immediately by stop flag.
+    // unstuff_bytes sees [0xF3] (just one byte) → TruncatedEscape.
+    let result = parse_standard_frame(&[0xF1, 0xF3, 0xF2]);
+    assert!(matches!(
+        result,
+        Err(ParseError::Unstuffing(
+            StuffingError::TruncatedEscape { .. }
+        ))
+    ));
+}
+
+#[test]
+fn parse_invalid_escape_offset() {
+    // Wire: [0xF1, 0xF3, 0x10, 0xF2] — offset 0x10 is invalid.
+    let result = parse_standard_frame(&[0xF1, 0xF3, 0x10, 0xF2]);
+    assert!(matches!(
+        result,
+        Err(ParseError::Unstuffing(StuffingError::InvalidOffset { .. }))
+    ));
+}
+
+// -- build + parse roundtrip ------------------------------------------
+
+#[test]
+fn roundtrip_build_then_parse() {
+    let original = vec![0x91]; // GETSERIAL
+    let frame = build_standard_frame(&original).unwrap();
+    let recovered = parse_standard_frame(&frame).unwrap();
+    assert_eq!(recovered, original);
+}
+
+#[test]
+fn roundtrip_with_reserved_bytes() {
+    let original = vec![0xF0, 0xF1, 0xF2, 0xF3, 0x42];
+    let frame = build_standard_frame(&original).unwrap();
+    let recovered = parse_standard_frame(&frame).unwrap();
+    assert_eq!(recovered, original);
+}
+
+#[test]
+fn roundtrip_multi_byte() {
+    let original = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+    let frame = build_standard_frame(&original).unwrap();
+    let recovered = parse_standard_frame(&frame).unwrap();
+    assert_eq!(recovered, original);
+}
+
+#[test]
+fn roundtrip_empty_contents() {
+    let original: Vec<u8> = vec![];
+    let frame = build_standard_frame(&original).unwrap();
+    let recovered = parse_standard_frame(&frame).unwrap();
+    assert_eq!(recovered, original);
+}
+
+#[test]
+fn roundtrip_all_single_bytes_via_frame() {
+    // Build and parse a frame for every possible single-byte payload.
+    for b in 0x00..=0xFFu8 {
+        let original = vec![b];
+        let frame = build_standard_frame(&original).unwrap();
+        let recovered = parse_standard_frame(&frame).unwrap();
+        assert_eq!(recovered, original, "roundtrip failed for byte 0x{b:02X}");
+    }
+}
+
+// -- parse error display ----------------------------------------------
+
+#[test]
+fn parse_error_display_missing_start() {
+    let err = ParseError::MissingStartFlag { actual: 0x00 };
+    assert_eq!(
+        err.to_string(),
+        "expected start flag 0xF0 or 0xF1, got 0x00"
+    );
+}
+
+#[test]
+fn parse_error_display_bad_checksum() {
+    let err = ParseError::BadChecksum {
+        expected: 0xAA,
+        actual: 0xBB,
+    };
+    assert_eq!(
+        err.to_string(),
+        "checksum mismatch: frame has 0xAA, computed 0xBB"
+    );
+}
+
+#[test]
+fn parse_error_from_stuffing_error() {
+    // Verify From<StuffingError> conversion works.
+    let stuffing_err = StuffingError::TruncatedEscape { position: 5 };
+    let parse_err: ParseError = stuffing_err.clone().into();
+    assert_eq!(parse_err, ParseError::Unstuffing(stuffing_err));
+}

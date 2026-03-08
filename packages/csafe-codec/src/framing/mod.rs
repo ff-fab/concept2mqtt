@@ -168,7 +168,7 @@ pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
     // an unnecessary O(n) allocation for oversized inputs.
     if contents.len() > MAX_FRAME_SIZE {
         return Err(FrameError::TooLarge {
-            actual: contents.len(),
+            actual: FRAME_ENVELOPE + contents.len() + 1,
         });
     }
 
@@ -194,12 +194,17 @@ pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
 /// Errors that can occur when parsing a CSAFE frame from wire bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// The first byte is not a recognised start flag (0xF0 or 0xF1).
+    /// The first byte is not the standard start flag (0xF1).
     MissingStartFlag { actual: u8 },
     /// The last byte is not the stop flag (0xF2).
     MissingStopFlag { actual: u8 },
     /// The frame is too short to contain even a checksum (start + stop only).
     EmptyFrame,
+    /// The wire frame exceeds the 120-byte protocol limit.
+    TooLarge {
+        /// Actual frame size in bytes.
+        actual: usize,
+    },
     /// Byte-unstuffing failed inside the frame body.
     Unstuffing(StuffingError),
     /// The checksum computed over the contents does not match the frame's
@@ -211,12 +216,18 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::MissingStartFlag { actual } => {
-                write!(f, "expected start flag 0xF0 or 0xF1, got 0x{actual:02X}")
+                write!(f, "expected start flag 0xF1, got 0x{actual:02X}")
             }
             ParseError::MissingStopFlag { actual } => {
                 write!(f, "expected stop flag 0xF2, got 0x{actual:02X}")
             }
             ParseError::EmptyFrame => write!(f, "frame contains no data or checksum"),
+            ParseError::TooLarge { actual } => {
+                write!(
+                    f,
+                    "frame size {actual} bytes exceeds {MAX_FRAME_SIZE}-byte limit"
+                )
+            }
             ParseError::Unstuffing(e) => write!(f, "unstuffing error: {e}"),
             ParseError::BadChecksum { expected, actual } => {
                 write!(
@@ -256,6 +267,12 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
     // But we check structurally instead.
     if frame.is_empty() {
         return Err(ParseError::EmptyFrame);
+    }
+
+    if frame.len() > MAX_FRAME_SIZE {
+        return Err(ParseError::TooLarge {
+            actual: frame.len(),
+        });
     }
 
     let start = frame[0];

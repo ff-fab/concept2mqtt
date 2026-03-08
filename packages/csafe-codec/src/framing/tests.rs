@@ -381,7 +381,12 @@ fn frame_huge_input_fast_reject() {
     // without allocating a stuffed buffer.
     let payload = vec![0x01; 1024];
     let result = build_standard_frame(&payload);
-    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        FrameError::TooLarge {
+            actual: FRAME_ENVELOPE + 1024 + 1
+        }
+    );
 }
 
 // -- parse_standard_frame ---------------------------------------------
@@ -496,6 +501,21 @@ fn parse_invalid_escape_offset() {
     ));
 }
 
+#[test]
+fn parse_too_large() {
+    // A frame exceeding MAX_FRAME_SIZE should be rejected immediately.
+    let mut frame = vec![0x00; MAX_FRAME_SIZE + 1];
+    frame[0] = STANDARD_START;
+    *frame.last_mut().unwrap() = STOP;
+    let result = parse_standard_frame(&frame);
+    assert_eq!(
+        result,
+        Err(ParseError::TooLarge {
+            actual: MAX_FRAME_SIZE + 1
+        })
+    );
+}
+
 // -- build + parse roundtrip ------------------------------------------
 
 #[test]
@@ -546,10 +566,7 @@ fn roundtrip_all_single_bytes_via_frame() {
 #[test]
 fn parse_error_display_missing_start() {
     let err = ParseError::MissingStartFlag { actual: 0x00 };
-    assert_eq!(
-        err.to_string(),
-        "expected start flag 0xF0 or 0xF1, got 0x00"
-    );
+    assert_eq!(err.to_string(), "expected start flag 0xF1, got 0x00");
 }
 
 #[test]
@@ -561,6 +578,15 @@ fn parse_error_display_bad_checksum() {
     assert_eq!(
         err.to_string(),
         "checksum mismatch: frame has 0xAA, computed 0xBB"
+    );
+}
+
+#[test]
+fn parse_error_display_too_large() {
+    let err = ParseError::TooLarge { actual: 200 };
+    assert_eq!(
+        err.to_string(),
+        "frame size 200 bytes exceeds 120-byte limit"
     );
 }
 

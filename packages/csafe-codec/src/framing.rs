@@ -1,8 +1,13 @@
-// CSAFE frame-level byte stuffing (protocol.yaml §byte_stuffing, Table 6).
+// CSAFE frame-level primitives: byte stuffing and checksum.
 //
-// Byte stuffing ensures the four flag bytes 0xF0–0xF3 never appear inside
-// frame contents or the checksum.  Each reserved byte is replaced by a
-// two-byte escape sequence: [0xF3, byte − 0xF0].
+// Byte stuffing (protocol.yaml §byte_stuffing, Table 6) ensures the four
+// flag bytes 0xF0–0xF3 never appear inside frame contents or the checksum.
+// Each reserved byte is replaced by a two-byte escape sequence:
+// [0xF3, byte − 0xF0].
+//
+// Checksum (protocol.yaml §checksum) is a single-byte XOR over the
+// (unstuffed) frame contents, excluding start/stop flags and extended-frame
+// addresses.  The checksum byte itself is subject to byte-stuffing.
 
 // ── Flag constants ──────────────────────────────────────────────────────
 
@@ -87,6 +92,22 @@ pub fn unstuff_bytes(data: &[u8]) -> Result<Vec<u8>, StuffingError> {
         }
     }
     Ok(out)
+}
+
+// ── Checksum ────────────────────────────────────────────────────────────
+
+/// Compute the CSAFE checksum: byte-by-byte XOR of `data`.
+///
+/// `data` should be the raw (unstuffed) frame contents — excluding
+/// start/stop flags and, for extended frames, the address bytes.
+/// An empty slice yields `0x00`.
+pub fn compute_checksum(data: &[u8]) -> u8 {
+    data.iter().fold(0u8, |acc, &b| acc ^ b)
+}
+
+/// Check whether `expected` matches the XOR checksum of `data`.
+pub fn validate_checksum(data: &[u8], expected: u8) -> bool {
+    compute_checksum(data) == expected
 }
 
 // ── Unit tests ──────────────────────────────────────────────────────────
@@ -209,5 +230,112 @@ mod tests {
                 offset: 0xFF
             }
         );
+    }
+
+    // -- compute_checksum -------------------------------------------------
+
+    #[test]
+    fn checksum_empty() {
+        assert_eq!(compute_checksum(&[]), 0x00);
+    }
+
+    #[test]
+    fn checksum_single_byte() {
+        assert_eq!(compute_checksum(&[0x42]), 0x42);
+    }
+
+    #[test]
+    fn checksum_two_bytes() {
+        // 0xAA ^ 0x55 = 0xFF
+        assert_eq!(compute_checksum(&[0xAA, 0x55]), 0xFF);
+    }
+
+    #[test]
+    fn checksum_self_cancelling() {
+        // XOR of a byte with itself is 0.
+        assert_eq!(compute_checksum(&[0x37, 0x37]), 0x00);
+    }
+
+    #[test]
+    fn checksum_spec_crosscheck() {
+        // pROWess cross-reference: XOR of frame contents [0x91] = 0x91.
+        // A real CSAFE GETSERIAL command (short command 0x91, no data).
+        assert_eq!(compute_checksum(&[0x91]), 0x91);
+    }
+
+    #[test]
+    fn checksum_multi_byte_payload() {
+        // Simulated payload: [0x01, 0x02, 0x03, 0x04]
+        // 0x01 ^ 0x02 = 0x03; 0x03 ^ 0x03 = 0x00; 0x00 ^ 0x04 = 0x04
+        assert_eq!(compute_checksum(&[0x01, 0x02, 0x03, 0x04]), 0x04);
+    }
+
+    #[test]
+    fn checksum_all_ff() {
+        // Three 0xFF bytes: 0xFF ^ 0xFF = 0x00; 0x00 ^ 0xFF = 0xFF
+        assert_eq!(compute_checksum(&[0xFF, 0xFF, 0xFF]), 0xFF);
+    }
+
+    // -- validate_checksum ------------------------------------------------
+
+    #[test]
+    fn validate_correct() {
+        let data = &[0x01, 0x02, 0x03, 0x04];
+        assert!(validate_checksum(data, 0x04));
+    }
+
+    #[test]
+    fn validate_incorrect() {
+        let data = &[0x01, 0x02, 0x03, 0x04];
+        assert!(!validate_checksum(data, 0x05));
+    }
+
+    #[test]
+    fn validate_empty_with_zero() {
+        assert!(validate_checksum(&[], 0x00));
+    }
+
+    #[test]
+    fn validate_empty_with_nonzero() {
+        assert!(!validate_checksum(&[], 0x01));
+    }
+
+    // -- checksum + stuffing integration ----------------------------------
+
+    #[test]
+    fn checksum_then_stuff_roundtrip() {
+        // Simulate frame building: compute checksum, stuff the payload,
+        // stuff the checksum byte, then unstuff and validate.
+        let payload = vec![0x91]; // GETSERIAL short command
+        let csum = compute_checksum(&payload);
+        assert_eq!(csum, 0x91);
+
+        let stuffed_payload = stuff_bytes(&payload);
+        let stuffed_csum = stuff_bytes(&[csum]);
+
+        let recovered_payload = unstuff_bytes(&stuffed_payload).unwrap();
+        let recovered_csum_bytes = unstuff_bytes(&stuffed_csum).unwrap();
+
+        assert!(validate_checksum(
+            &recovered_payload,
+            recovered_csum_bytes[0]
+        ));
+    }
+
+    #[test]
+    fn checksum_reserved_byte_roundtrip() {
+        // Payload that produces a checksum in the reserved range.
+        // 0xF1 ^ 0x00 = 0xF1 → checksum is 0xF1, needs stuffing.
+        let payload = vec![0xF1];
+        let csum = compute_checksum(&payload);
+        assert_eq!(csum, 0xF1);
+
+        // Checksum 0xF1 must be stuffed → [0xF3, 0x01]
+        let stuffed_csum = stuff_bytes(&[csum]);
+        assert_eq!(stuffed_csum, vec![0xF3, 0x01]);
+
+        // Unstuff recovers the original checksum
+        let recovered = unstuff_bytes(&stuffed_csum).unwrap();
+        assert!(validate_checksum(&payload, recovered[0]));
     }
 }

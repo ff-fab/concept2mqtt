@@ -2,6 +2,7 @@
 
 from csafe_codec._native import (
     __version__,
+    build_standard_frame,
     compute_checksum,
     stuff_bytes,
     unstuff_bytes,
@@ -10,6 +11,7 @@ from csafe_codec._native import (
 
 __all__ = [
     "__version__",
+    "build_standard_frame",
     "compute_checksum",
     "stuff_bytes",
     "unstuff_bytes",

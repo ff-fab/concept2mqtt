@@ -14,6 +14,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_unstuff_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(py_compute_checksum, m)?)?;
     m.add_function(wrap_pyfunction!(py_validate_checksum, m)?)?;
+    m.add_function(wrap_pyfunction!(py_build_standard_frame, m)?)?;
     Ok(())
 }
 
@@ -43,6 +44,15 @@ fn py_compute_checksum(data: &[u8]) -> u8 {
 #[pyfunction(name = "validate_checksum")]
 fn py_validate_checksum(data: &[u8], expected: u8) -> bool {
     framing::validate_checksum(data, expected)
+}
+
+/// Build a standard CSAFE frame from raw contents.
+///
+/// Raises ``ValueError`` if the resulting frame exceeds the 120-byte limit.
+#[pyfunction(name = "build_standard_frame")]
+fn py_build_standard_frame(contents: &[u8]) -> PyResult<Vec<u8>> {
+    framing::build_standard_frame(contents)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
 #[cfg(test)]

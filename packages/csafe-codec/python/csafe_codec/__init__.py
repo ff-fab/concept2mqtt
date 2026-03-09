@@ -5,7 +5,6 @@ from csafe_codec._native import (
     ADDR_DEFAULT_SECONDARY,
     ADDR_PC_HOST,
     ADDR_RESERVED,
-    # Command ID constants — public short
     CMD_AUTO_UPLOAD,
     CMD_BAD_ID,
     CMD_GET_CADENCE,
@@ -17,7 +16,6 @@ from csafe_codec._native import (
     CMD_GET_ID,
     CMD_GET_ODOMETER,
     CMD_GET_PACE,
-    # Command ID constants — PM wrappers
     CMD_GET_PM_CFG,
     CMD_GET_PM_DATA,
     CMD_GET_POWER,

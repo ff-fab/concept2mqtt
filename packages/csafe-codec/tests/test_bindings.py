@@ -244,6 +244,164 @@ class TestFrameRoundTrip:
 
 
 # =============================================================================
+# Address Constants
+# =============================================================================
+
+
+class TestAddressConstants:
+    """Extended-frame address constants are exposed with correct values."""
+
+    def test_addr_pc_host(self) -> None:
+        assert csafe_codec.ADDR_PC_HOST == 0x00
+        assert isinstance(csafe_codec.ADDR_PC_HOST, int)
+
+    def test_addr_default_secondary(self) -> None:
+        assert csafe_codec.ADDR_DEFAULT_SECONDARY == 0xFD
+        assert isinstance(csafe_codec.ADDR_DEFAULT_SECONDARY, int)
+
+    def test_addr_reserved(self) -> None:
+        assert csafe_codec.ADDR_RESERVED == 0xFE
+        assert isinstance(csafe_codec.ADDR_RESERVED, int)
+
+    def test_addr_broadcast(self) -> None:
+        assert csafe_codec.ADDR_BROADCAST == 0xFF
+        assert isinstance(csafe_codec.ADDR_BROADCAST, int)
+
+
+# =============================================================================
+# Extended Frame Building
+# =============================================================================
+
+
+class TestBuildExtendedFrame:
+    """build_extended_frame produces wire-format extended frames through PyO3."""
+
+    def test_simple(self) -> None:
+        frame = csafe_codec.build_extended_frame(0xFD, 0x00, b"\x91")
+        assert frame == b"\xf0\xfd\x00\x91\x91\xf2"
+
+    def test_empty_contents(self) -> None:
+        frame = csafe_codec.build_extended_frame(0xFD, 0x00, b"")
+        assert frame == b"\xf0\xfd\x00\x00\xf2"
+
+    def test_address_stuffing(self) -> None:
+        frame = csafe_codec.build_extended_frame(0x00, 0xF1, b"\x91")
+        assert frame == b"\xf0\x00\xf3\x01\x91\x91\xf2"
+
+    def test_too_large_raises(self) -> None:
+        with pytest.raises(ValueError, match="exceeds 120-byte limit"):
+            csafe_codec.build_extended_frame(0x00, 0x00, b"\x01" * 116)
+
+    def test_returns_bytes(self) -> None:
+        result = csafe_codec.build_extended_frame(0x00, 0x00, b"\x42")
+        assert isinstance(result, bytes)
+
+
+# =============================================================================
+# Extended Frame Parsing
+# =============================================================================
+
+
+class TestParseExtendedFrame:
+    """parse_extended_frame decodes extended wire-format frames through PyO3."""
+
+    def test_simple(self) -> None:
+        dst, src, contents = csafe_codec.parse_extended_frame(
+            b"\xf0\xfd\x00\x91\x91\xf2"
+        )
+        assert dst == 0xFD
+        assert src == 0x00
+        assert contents == b"\x91"
+
+    def test_empty_contents(self) -> None:
+        dst, src, contents = csafe_codec.parse_extended_frame(b"\xf0\xfd\x00\x00\xf2")
+        assert contents == b""
+
+    def test_returns_tuple(self) -> None:
+        result = csafe_codec.parse_extended_frame(b"\xf0\xfd\x00\x91\x91\xf2")
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_empty_frame_raises(self) -> None:
+        with pytest.raises(ValueError, match="no data or checksum"):
+            csafe_codec.parse_extended_frame(b"")
+
+    def test_wrong_start_raises(self) -> None:
+        with pytest.raises(ValueError, match="expected start flag"):
+            csafe_codec.parse_extended_frame(b"\xf1\x00\x00\x00\xf2")
+
+    def test_too_short_raises(self) -> None:
+        with pytest.raises(ValueError, match="frame too short"):
+            csafe_codec.parse_extended_frame(b"\xf0\x00\x00\xf2")
+
+    def test_bad_checksum_raises(self) -> None:
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            csafe_codec.parse_extended_frame(b"\xf0\x00\x00\x01\xff\xf2")
+
+
+# =============================================================================
+# Extended Frame Round-Trip
+# =============================================================================
+
+
+class TestExtendedFrameRoundTrip:
+    """Build and parse round-trip for extended frames across FFI."""
+
+    def test_simple(self) -> None:
+        original = b"\x91"
+        frame = csafe_codec.build_extended_frame(0xFD, 0x00, original)
+        dst, src, contents = csafe_codec.parse_extended_frame(frame)
+        assert dst == 0xFD
+        assert src == 0x00
+        assert contents == original
+
+    def test_reserved_bytes(self) -> None:
+        original = b"\xf0\xf1\xf2\xf3\x42"
+        frame = csafe_codec.build_extended_frame(0xFD, 0x00, original)
+        _, _, contents = csafe_codec.parse_extended_frame(frame)
+        assert contents == original
+
+    def test_reserved_addresses(self) -> None:
+        frame = csafe_codec.build_extended_frame(0xF0, 0xF3, b"\x42")
+        dst, src, contents = csafe_codec.parse_extended_frame(frame)
+        assert dst == 0xF0
+        assert src == 0xF3
+        assert contents == b"\x42"
+
+
+# =============================================================================
+# Auto-detecting parse_frame
+# =============================================================================
+
+
+class TestParseFrame:
+    """parse_frame auto-detects standard vs extended frames."""
+
+    def test_standard(self) -> None:
+        wire = csafe_codec.build_standard_frame(b"\x91")
+        result = csafe_codec.parse_frame(wire)
+        assert result["type"] == "standard"
+        assert result["contents"] == b"\x91"
+
+    def test_extended(self) -> None:
+        wire = csafe_codec.build_extended_frame(0xFD, 0x00, b"\x91")
+        result = csafe_codec.parse_frame(wire)
+        assert result["type"] == "extended"
+        assert result["destination"] == 0xFD
+        assert result["source"] == 0x00
+        assert result["contents"] == b"\x91"
+
+    def test_returns_dict(self) -> None:
+        wire = csafe_codec.build_standard_frame(b"\x42")
+        result = csafe_codec.parse_frame(wire)
+        assert isinstance(result, dict)
+
+    def test_empty_raises(self) -> None:
+        with pytest.raises(ValueError):
+            csafe_codec.parse_frame(b"")
+
+
+# =============================================================================
 # Public API surface
 # =============================================================================
 
@@ -254,18 +412,25 @@ class TestPublicAPI:
     @pytest.mark.parametrize(
         "name",
         [
+            "ADDR_BROADCAST",
+            "ADDR_DEFAULT_SECONDARY",
+            "ADDR_PC_HOST",
+            "ADDR_RESERVED",
             "EXTENDED_START",
             "STANDARD_START",
             "STOP",
             "STUFF_MARKER",
             "MAX_FRAME_SIZE",
             "__version__",
+            "build_extended_frame",
+            "build_standard_frame",
+            "compute_checksum",
+            "parse_extended_frame",
+            "parse_frame",
+            "parse_standard_frame",
             "stuff_bytes",
             "unstuff_bytes",
-            "compute_checksum",
             "validate_checksum",
-            "build_standard_frame",
-            "parse_standard_frame",
         ],
     )
     def test_symbol_exported(self, name: str) -> None:

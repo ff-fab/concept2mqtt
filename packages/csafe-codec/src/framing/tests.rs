@@ -401,7 +401,10 @@ fn parse_missing_start_flag() {
     // Starts with 0x00 instead of 0xF1.
     assert_eq!(
         parse_standard_frame(&[0x00, 0x42, 0x42, 0xF2]),
-        Err(ParseError::MissingStartFlag { actual: 0x00 })
+        Err(ParseError::MissingStartFlag {
+            expected: STANDARD_START,
+            actual: 0x00,
+        })
     );
 }
 
@@ -410,7 +413,10 @@ fn parse_extended_start_rejected() {
     // Extended start flag 0xF0 is not a standard frame.
     assert_eq!(
         parse_standard_frame(&[0xF0, 0x42, 0x42, 0xF2]),
-        Err(ParseError::MissingStartFlag { actual: 0xF0 })
+        Err(ParseError::MissingStartFlag {
+            expected: STANDARD_START,
+            actual: 0xF0,
+        })
     );
 }
 
@@ -565,7 +571,10 @@ fn roundtrip_all_single_bytes_via_frame() {
 
 #[test]
 fn parse_error_display_missing_start() {
-    let err = ParseError::MissingStartFlag { actual: 0x00 };
+    let err = ParseError::MissingStartFlag {
+        expected: STANDARD_START,
+        actual: 0x00,
+    };
     assert_eq!(err.to_string(), "expected start flag 0xF1, got 0x00");
 }
 
@@ -596,4 +605,312 @@ fn parse_error_from_stuffing_error() {
     let stuffing_err = StuffingError::TruncatedEscape { position: 5 };
     let parse_err: ParseError = stuffing_err.clone().into();
     assert_eq!(parse_err, ParseError::Unstuffing(stuffing_err));
+}
+
+// -- extended frame: build_extended_frame -----------------------------
+
+#[test]
+fn ext_build_simple() {
+    // dst=0xFD, src=0x00, contents=[0x91]
+    // checksum = 0x91 (XOR of contents only, addresses excluded)
+    let frame = build_extended_frame(0xFD, 0x00, &[0x91]).unwrap();
+    assert_eq!(frame, vec![0xF0, 0xFD, 0x00, 0x91, 0x91, 0xF2]);
+}
+
+#[test]
+fn ext_build_starts_with_extended_flag() {
+    let frame = build_extended_frame(0x00, 0x00, &[0x42]).unwrap();
+    assert_eq!(frame[0], EXTENDED_START);
+}
+
+#[test]
+fn ext_build_ends_with_stop_flag() {
+    let frame = build_extended_frame(0x00, 0x00, &[0x42]).unwrap();
+    assert_eq!(*frame.last().unwrap(), STOP);
+}
+
+#[test]
+fn ext_build_empty_contents() {
+    // Contents empty → checksum = 0x00.
+    let frame = build_extended_frame(0xFD, 0x00, &[]).unwrap();
+    assert_eq!(frame, vec![0xF0, 0xFD, 0x00, 0x00, 0xF2]);
+}
+
+#[test]
+fn ext_build_address_stuffing() {
+    // src=0xF1 needs stuffing → [0xF3, 0x01].
+    let frame = build_extended_frame(0x00, 0xF1, &[0x91]).unwrap();
+    // [0xF0] [0x00] [0xF3, 0x01] [0x91] [0x91] [0xF2]
+    assert_eq!(frame, vec![0xF0, 0x00, 0xF3, 0x01, 0x91, 0x91, 0xF2]);
+}
+
+#[test]
+fn ext_build_both_addresses_stuffed() {
+    // dst=0xF0, src=0xF3 both need stuffing.
+    let frame = build_extended_frame(0xF0, 0xF3, &[0x42]).unwrap();
+    // dst: 0xF0 → [0xF3, 0x00], src: 0xF3 → [0xF3, 0x03]
+    // contents: [0x42], checksum: 0x42
+    assert_eq!(frame, vec![0xF0, 0xF3, 0x00, 0xF3, 0x03, 0x42, 0x42, 0xF2]);
+}
+
+#[test]
+fn ext_build_contents_stuffed() {
+    // contents=[0xF0] → stuffed=[0xF3, 0x00], checksum=0xF0 → [0xF3, 0x00]
+    let frame = build_extended_frame(0x00, 0x00, &[0xF0]).unwrap();
+    assert_eq!(frame, vec![0xF0, 0x00, 0x00, 0xF3, 0x00, 0xF3, 0x00, 0xF2]);
+}
+
+#[test]
+fn ext_build_checksum_excludes_addresses() {
+    // Verify the checksum is computed over contents only.
+    // contents=[0x01, 0x02, 0x03], checksum = 0x01^0x02^0x03 = 0x00
+    let frame = build_extended_frame(0xFF, 0xFD, &[0x01, 0x02, 0x03]).unwrap();
+    // Unstuff body to verify checksum.
+    let body = &frame[1..frame.len() - 1];
+    let unstuffed = unstuff_bytes(body).unwrap();
+    // unstuffed: [0xFF, 0xFD, 0x01, 0x02, 0x03, 0x00]
+    let csum = unstuffed.last().unwrap();
+    assert_eq!(*csum, 0x00); // XOR of contents only
+}
+
+#[test]
+fn ext_build_too_large() {
+    // Contents so large the frame would exceed 120 bytes.
+    let result = build_extended_frame(0x00, 0x00, &[0x01; 116]);
+    assert!(result.is_err());
+    if let Err(FrameError::TooLarge { actual }) = result {
+        assert!(actual > MAX_FRAME_SIZE);
+    }
+}
+
+#[test]
+fn ext_build_fast_reject() {
+    // Raw contents > MAX_FRAME_SIZE triggers fast-reject path.
+    let result = build_extended_frame(0x00, 0x00, &[0x01; 121]);
+    assert!(matches!(result, Err(FrameError::TooLarge { .. })));
+}
+
+// -- extended frame: parse_extended_frame -----------------------------
+
+#[test]
+fn ext_parse_simple() {
+    let frame = vec![0xF0, 0xFD, 0x00, 0x91, 0x91, 0xF2];
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.destination, 0xFD);
+    assert_eq!(parsed.source, 0x00);
+    assert_eq!(parsed.contents, vec![0x91]);
+}
+
+#[test]
+fn ext_parse_empty_contents() {
+    let frame = vec![0xF0, 0xFD, 0x00, 0x00, 0xF2];
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.destination, 0xFD);
+    assert_eq!(parsed.source, 0x00);
+    let empty: Vec<u8> = vec![];
+    assert_eq!(parsed.contents, empty);
+}
+
+#[test]
+fn ext_parse_stuffed_addresses() {
+    // src=0xF1 → wire: [0xF3, 0x01]
+    let frame = vec![0xF0, 0x00, 0xF3, 0x01, 0x91, 0x91, 0xF2];
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.source, 0xF1);
+    assert_eq!(parsed.contents, vec![0x91]);
+}
+
+#[test]
+fn ext_parse_stuffed_contents() {
+    // contents=[0xF0], checksum=0xF0 — both stuffed on wire.
+    let frame = vec![0xF0, 0x00, 0x00, 0xF3, 0x00, 0xF3, 0x00, 0xF2];
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.contents, vec![0xF0]);
+}
+
+#[test]
+fn ext_parse_empty_input() {
+    assert_eq!(parse_extended_frame(&[]), Err(ParseError::EmptyFrame));
+}
+
+#[test]
+fn ext_parse_wrong_start_flag() {
+    // Standard start flag 0xF1 is not an extended frame.
+    assert_eq!(
+        parse_extended_frame(&[0xF1, 0x00, 0x00, 0x00, 0xF2]),
+        Err(ParseError::MissingStartFlag {
+            expected: EXTENDED_START,
+            actual: 0xF1,
+        })
+    );
+}
+
+#[test]
+fn ext_parse_missing_stop_flag() {
+    assert_eq!(
+        parse_extended_frame(&[0xF0, 0x00, 0x00, 0x00, 0xFF]),
+        Err(ParseError::MissingStopFlag { actual: 0xFF })
+    );
+}
+
+#[test]
+fn ext_parse_too_short_for_addresses() {
+    // Body has only 2 unstuffed bytes: dst + src, no room for checksum.
+    let frame = vec![0xF0, 0x00, 0x00, 0xF2];
+    assert_eq!(
+        parse_extended_frame(&frame),
+        Err(ParseError::FrameTooShort {
+            minimum: 3,
+            actual: 2,
+        })
+    );
+}
+
+#[test]
+fn ext_parse_too_short_body_one_byte() {
+    // Body has only 1 unstuffed byte (just dst).
+    let frame = vec![0xF0, 0x00, 0xF2];
+    assert_eq!(
+        parse_extended_frame(&frame),
+        Err(ParseError::FrameTooShort {
+            minimum: 3,
+            actual: 1,
+        })
+    );
+}
+
+#[test]
+fn ext_parse_bad_checksum() {
+    // dst=0x00, src=0x00, contents=[0x01], bad checksum=0xFF
+    let frame = vec![0xF0, 0x00, 0x00, 0x01, 0xFF, 0xF2];
+    assert_eq!(
+        parse_extended_frame(&frame),
+        Err(ParseError::BadChecksum {
+            expected: 0xFF,
+            actual: 0x01,
+        })
+    );
+}
+
+#[test]
+fn ext_parse_too_large() {
+    let mut frame = vec![0u8; 121];
+    frame[0] = EXTENDED_START;
+    *frame.last_mut().unwrap() = STOP;
+    assert_eq!(
+        parse_extended_frame(&frame),
+        Err(ParseError::TooLarge { actual: 121 })
+    );
+}
+
+// -- extended frame round-trip ----------------------------------------
+
+#[test]
+fn ext_roundtrip_simple() {
+    let ef = build_extended_frame(0xFD, 0x00, &[0x91]).unwrap();
+    let parsed = parse_extended_frame(&ef).unwrap();
+    assert_eq!(parsed.destination, 0xFD);
+    assert_eq!(parsed.source, 0x00);
+    assert_eq!(parsed.contents, vec![0x91]);
+}
+
+#[test]
+fn ext_roundtrip_reserved_bytes_in_contents() {
+    let original = vec![0xF0, 0xF1, 0xF2, 0xF3, 0x42];
+    let frame = build_extended_frame(0xFD, 0x00, &original).unwrap();
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.contents, original);
+}
+
+#[test]
+fn ext_roundtrip_reserved_addresses() {
+    // Both addresses are reserved bytes needing stuffing.
+    let frame = build_extended_frame(0xF0, 0xF3, &[0x42]).unwrap();
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.destination, 0xF0);
+    assert_eq!(parsed.source, 0xF3);
+    assert_eq!(parsed.contents, vec![0x42]);
+}
+
+#[test]
+fn ext_roundtrip_empty_contents() {
+    let frame = build_extended_frame(0x00, 0x00, &[]).unwrap();
+    let parsed = parse_extended_frame(&frame).unwrap();
+    assert_eq!(parsed.destination, 0x00);
+    assert_eq!(parsed.source, 0x00);
+    let empty: Vec<u8> = vec![];
+    assert_eq!(parsed.contents, empty);
+}
+
+#[test]
+fn ext_roundtrip_all_single_bytes() {
+    // Every possible single-byte payload survives the extended round-trip.
+    for b in 0x00..=0xFFu8 {
+        let original = vec![b];
+        let frame = build_extended_frame(ADDR_DEFAULT_SECONDARY, ADDR_PC_HOST, &original).unwrap();
+        let parsed = parse_extended_frame(&frame).unwrap();
+        assert_eq!(
+            parsed.contents, original,
+            "round-trip failed for byte 0x{b:02X}"
+        );
+    }
+}
+
+// -- parse_frame (auto-detect) ----------------------------------------
+
+#[test]
+fn parse_frame_standard() {
+    let wire = build_standard_frame(&[0x91]).unwrap();
+    let result = parse_frame(&wire).unwrap();
+    assert_eq!(result, Frame::Standard(vec![0x91]));
+}
+
+#[test]
+fn parse_frame_extended() {
+    let wire = build_extended_frame(0xFD, 0x00, &[0x91]).unwrap();
+    let result = parse_frame(&wire).unwrap();
+    assert_eq!(
+        result,
+        Frame::Extended(ExtendedFrame {
+            destination: 0xFD,
+            source: 0x00,
+            contents: vec![0x91],
+        })
+    );
+}
+
+#[test]
+fn parse_frame_empty() {
+    assert_eq!(parse_frame(&[]), Err(ParseError::EmptyFrame));
+}
+
+#[test]
+fn parse_frame_unknown_start() {
+    assert_eq!(
+        parse_frame(&[0x00, 0x42, 0xF2]),
+        Err(ParseError::MissingStartFlag {
+            expected: STANDARD_START,
+            actual: 0x00,
+        })
+    );
+}
+
+// -- extended frame error display -------------------------------------
+
+#[test]
+fn ext_parse_error_display_missing_start() {
+    let err = ParseError::MissingStartFlag {
+        expected: EXTENDED_START,
+        actual: 0xF1,
+    };
+    assert_eq!(err.to_string(), "expected start flag 0xF0, got 0xF1");
+}
+
+#[test]
+fn ext_parse_error_display_frame_too_short() {
+    let err = ParseError::FrameTooShort {
+        minimum: 3,
+        actual: 1,
+    };
+    assert_eq!(err.to_string(), "frame too short: need 3 bytes, got 1");
 }

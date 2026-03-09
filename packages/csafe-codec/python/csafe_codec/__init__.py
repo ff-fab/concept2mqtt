@@ -1,14 +1,21 @@
 """CSAFE protocol codec for Concept2 PM5 rowing monitors."""
 
 from csafe_codec._native import (
+    ADDR_BROADCAST,
+    ADDR_DEFAULT_SECONDARY,
+    ADDR_PC_HOST,
+    ADDR_RESERVED,
     EXTENDED_START,
     MAX_FRAME_SIZE,
     STANDARD_START,
     STOP,
     STUFF_MARKER,
     __version__,
+    build_extended_frame,
     build_standard_frame,
     compute_checksum,
+    parse_extended_frame,
+    parse_frame,
     parse_standard_frame,
     stuff_bytes,
     unstuff_bytes,
@@ -16,14 +23,21 @@ from csafe_codec._native import (
 )
 
 __all__ = [
+    "ADDR_BROADCAST",
+    "ADDR_DEFAULT_SECONDARY",
+    "ADDR_PC_HOST",
+    "ADDR_RESERVED",
     "EXTENDED_START",
     "MAX_FRAME_SIZE",
     "STANDARD_START",
     "STOP",
     "STUFF_MARKER",
     "__version__",
+    "build_extended_frame",
     "build_standard_frame",
     "compute_checksum",
+    "parse_extended_frame",
+    "parse_frame",
     "parse_standard_frame",
     "stuff_bytes",
     "unstuff_bytes",

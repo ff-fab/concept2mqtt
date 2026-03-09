@@ -32,6 +32,17 @@ pub const STUFF_MARKER: u8 = 0xF3;
 /// Inclusive range of bytes that must be escaped.
 const STUFF_RANGE: std::ops::RangeInclusive<u8> = EXTENDED_START..=STUFF_MARKER;
 
+// ── Address constants (extended frames) ──────────────────────────────────
+
+/// PC host (primary device) address.
+pub const ADDR_PC_HOST: u8 = 0x00;
+/// Default secondary device address.
+pub const ADDR_DEFAULT_SECONDARY: u8 = 0xFD;
+/// Reserved for future expansion.
+pub const ADDR_RESERVED: u8 = 0xFE;
+/// Broadcast address — accepted by all secondaries.
+pub const ADDR_BROADCAST: u8 = 0xFF;
+
 // ── Error types ─────────────────────────────────────────────────────────
 
 /// Errors that can occur while unstuffing a CSAFE byte stream.
@@ -194,12 +205,14 @@ pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
 /// Errors that can occur when parsing a CSAFE frame from wire bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// The first byte is not the standard start flag (0xF1).
-    MissingStartFlag { actual: u8 },
+    /// The first byte is not the expected start flag.
+    MissingStartFlag { expected: u8, actual: u8 },
     /// The last byte is not the stop flag (0xF2).
     MissingStopFlag { actual: u8 },
     /// The frame is too short to contain even a checksum (start + stop only).
     EmptyFrame,
+    /// The frame is too short to contain the required header fields.
+    FrameTooShort { minimum: usize, actual: usize },
     /// The wire frame exceeds the 120-byte protocol limit.
     TooLarge {
         /// Actual frame size in bytes.
@@ -215,8 +228,11 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::MissingStartFlag { actual } => {
-                write!(f, "expected start flag 0xF1, got 0x{actual:02X}")
+            ParseError::MissingStartFlag { expected, actual } => {
+                write!(
+                    f,
+                    "expected start flag 0x{expected:02X}, got 0x{actual:02X}"
+                )
             }
             ParseError::MissingStopFlag { actual } => {
                 write!(f, "expected stop flag 0xF2, got 0x{actual:02X}")
@@ -227,6 +243,9 @@ impl std::fmt::Display for ParseError {
                     f,
                     "frame size {actual} bytes exceeds {MAX_FRAME_SIZE}-byte limit"
                 )
+            }
+            ParseError::FrameTooShort { minimum, actual } => {
+                write!(f, "frame too short: need {minimum} bytes, got {actual}")
             }
             ParseError::Unstuffing(e) => write!(f, "unstuffing error: {e}"),
             ParseError::BadChecksum { expected, actual } => {
@@ -277,7 +296,10 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
 
     let start = frame[0];
     if start != STANDARD_START {
-        return Err(ParseError::MissingStartFlag { actual: start });
+        return Err(ParseError::MissingStartFlag {
+            expected: STANDARD_START,
+            actual: start,
+        });
     }
 
     let stop = *frame.last().unwrap(); // safe: frame is non-empty
@@ -307,6 +329,181 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
     }
 
     Ok(contents.to_vec())
+}
+
+// ── Extended frame building ─────────────────────────────────────────────
+
+/// Build an extended CSAFE frame from raw (unstuffed) `contents` with
+/// destination and source addresses.
+///
+/// Returns the complete wire-format frame:
+/// `[0xF0] [stuffed dst] [stuffed src] [stuffed contents] [stuffed checksum] [0xF2]`
+///
+/// Per the spec, addresses are byte-stuffed but **excluded from the
+/// checksum** — the checksum covers only the frame contents.
+///
+/// # Errors
+///
+/// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
+/// the 120-byte protocol limit.
+pub fn build_extended_frame(
+    destination: u8,
+    source: u8,
+    contents: &[u8],
+) -> Result<Vec<u8>, FrameError> {
+    // Fast reject: if raw contents alone exceed the limit, the stuffed
+    // frame (which is >= raw) certainly will too.
+    if contents.len() > MAX_FRAME_SIZE {
+        return Err(FrameError::TooLarge {
+            actual: FRAME_ENVELOPE + contents.len() + 3, // rough lower bound
+        });
+    }
+
+    let stuffed_dst = stuff_bytes(&[destination]);
+    let stuffed_src = stuff_bytes(&[source]);
+    let stuffed_contents = stuff_bytes(contents);
+    let checksum = compute_checksum(contents);
+    let stuffed_checksum = stuff_bytes(&[checksum]);
+
+    let total = FRAME_ENVELOPE
+        + stuffed_dst.len()
+        + stuffed_src.len()
+        + stuffed_contents.len()
+        + stuffed_checksum.len();
+    if total > MAX_FRAME_SIZE {
+        return Err(FrameError::TooLarge { actual: total });
+    }
+
+    let mut frame = Vec::with_capacity(total);
+    frame.push(EXTENDED_START);
+    frame.extend_from_slice(&stuffed_dst);
+    frame.extend_from_slice(&stuffed_src);
+    frame.extend_from_slice(&stuffed_contents);
+    frame.extend_from_slice(&stuffed_checksum);
+    frame.push(STOP);
+    Ok(frame)
+}
+
+// ── Extended frame parsing ──────────────────────────────────────────────
+
+/// Parsed contents of an extended CSAFE frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtendedFrame {
+    /// Destination address (unstuffed).
+    pub destination: u8,
+    /// Source address (unstuffed).
+    pub source: u8,
+    /// Raw frame contents (unstuffed, checksum removed).
+    pub contents: Vec<u8>,
+}
+
+/// Parse an extended CSAFE frame from wire bytes.
+///
+/// Expects the full frame including start/stop flags:
+/// `[0xF0] [stuffed dst] [stuffed src] [stuffed contents + stuffed checksum] [0xF2]`
+///
+/// Steps:
+/// 1. Validate start flag (0xF0) and stop flag (0xF2).
+/// 2. Unstuff the body between the flags.
+/// 3. Extract the first two bytes as destination and source addresses.
+/// 4. Split the remaining body into contents and checksum.
+/// 5. Validate checksum over **contents only** (addresses excluded).
+///
+/// # Errors
+///
+/// Returns [`ParseError`] for missing flags, frames too short for the
+/// address header, unstuffing failures, or checksum mismatches.
+pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
+    if frame.is_empty() {
+        return Err(ParseError::EmptyFrame);
+    }
+
+    if frame.len() > MAX_FRAME_SIZE {
+        return Err(ParseError::TooLarge {
+            actual: frame.len(),
+        });
+    }
+
+    let start = frame[0];
+    if start != EXTENDED_START {
+        return Err(ParseError::MissingStartFlag {
+            expected: EXTENDED_START,
+            actual: start,
+        });
+    }
+
+    let stop = *frame.last().unwrap();
+    if stop != STOP {
+        return Err(ParseError::MissingStopFlag { actual: stop });
+    }
+
+    let stuffed_body = &frame[1..frame.len() - 1];
+    let unstuffed = unstuff_bytes(stuffed_body)?;
+
+    // Need at least: dst(1) + src(1) + checksum(1) = 3 bytes.
+    if unstuffed.len() < 3 {
+        return Err(ParseError::FrameTooShort {
+            minimum: 3,
+            actual: unstuffed.len(),
+        });
+    }
+
+    let destination = unstuffed[0];
+    let source = unstuffed[1];
+
+    // Everything after addresses: contents + checksum (last byte).
+    let after_addrs = &unstuffed[2..];
+    let (contents, checksum_slice) = after_addrs.split_at(after_addrs.len() - 1);
+    let frame_checksum = checksum_slice[0];
+
+    // Checksum covers contents only — addresses are excluded.
+    let computed = compute_checksum(contents);
+    if computed != frame_checksum {
+        return Err(ParseError::BadChecksum {
+            expected: frame_checksum,
+            actual: computed,
+        });
+    }
+
+    Ok(ExtendedFrame {
+        destination,
+        source,
+        contents: contents.to_vec(),
+    })
+}
+
+// ── Auto-detecting parser ───────────────────────────────────────────────
+
+/// The result of parsing a frame whose type is not known in advance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Frame {
+    /// A standard frame containing raw contents.
+    Standard(Vec<u8>),
+    /// An extended frame with addressing and raw contents.
+    Extended(ExtendedFrame),
+}
+
+/// Parse a CSAFE frame, auto-detecting standard vs extended by the start
+/// flag byte.
+///
+/// - `0xF1` → standard frame → [`Frame::Standard`]
+/// - `0xF0` → extended frame → [`Frame::Extended`]
+/// - anything else → [`ParseError::MissingStartFlag`] (expected `0xF1`)
+///
+/// # Errors
+///
+/// Returns the same errors as the underlying parser for whichever frame
+/// type is detected.
+pub fn parse_frame(frame: &[u8]) -> Result<Frame, ParseError> {
+    match frame.first() {
+        Some(&STANDARD_START) => parse_standard_frame(frame).map(Frame::Standard),
+        Some(&EXTENDED_START) => parse_extended_frame(frame).map(Frame::Extended),
+        Some(&actual) => Err(ParseError::MissingStartFlag {
+            expected: STANDARD_START,
+            actual,
+        }),
+        None => Err(ParseError::EmptyFrame),
+    }
 }
 
 // ── Unit tests ──────────────────────────────────────────────────────────

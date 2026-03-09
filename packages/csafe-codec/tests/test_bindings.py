@@ -416,6 +416,11 @@ class TestPublicAPI:
             "ADDR_DEFAULT_SECONDARY",
             "ADDR_PC_HOST",
             "ADDR_RESERVED",
+            "CMD_GET_STATUS",
+            "CMD_RESET",
+            "CMD_SET_TIME",
+            "CMD_GET_PM_CFG",
+            "CMD_SET_USER_CFG1",
             "EXTENDED_START",
             "STANDARD_START",
             "STOP",
@@ -425,14 +430,133 @@ class TestPublicAPI:
             "build_extended_frame",
             "build_standard_frame",
             "compute_checksum",
+            "duration_type_name",
+            "duration_type_values",
+            "erg_machine_type_name",
+            "erg_machine_type_values",
+            "interval_type_name",
+            "interval_type_values",
             "parse_extended_frame",
             "parse_frame",
             "parse_standard_frame",
+            "rowing_state_name",
+            "rowing_state_values",
+            "screen_type_name",
+            "screen_type_values",
+            "stroke_state_name",
+            "stroke_state_values",
             "stuff_bytes",
             "unstuff_bytes",
             "validate_checksum",
+            "workout_state_name",
+            "workout_state_values",
+            "workout_type_name",
+            "workout_type_values",
         ],
     )
     def test_symbol_exported(self, name: str) -> None:
         assert hasattr(csafe_codec, name)
         assert name in csafe_codec.__all__
+
+
+# =============================================================================
+# Command enum bindings
+# =============================================================================
+
+
+class TestEnumNameLookups:
+    """Enum name functions return correct names and reject invalid values."""
+
+    @pytest.mark.parametrize(
+        ("func", "value", "expected"),
+        [
+            ("workout_type_name", 0, "JustRowNoSplits"),
+            ("interval_type_name", 255, "None"),
+            ("workout_state_name", 1, "WorkoutRow"),
+            ("rowing_state_name", 0, "Inactive"),
+            ("stroke_state_name", 2, "Driving"),
+            ("duration_type_name", 0x80, "Distance"),
+            ("screen_type_name", 3, "Csafe"),
+            ("erg_machine_type_name", 192, "Bike"),
+        ],
+    )
+    def test_valid_lookup(self, func: str, value: int, expected: str) -> None:
+        assert getattr(csafe_codec, func)(value) == expected
+
+    @pytest.mark.parametrize(
+        ("func", "invalid_value"),
+        [
+            ("workout_type_name", 99),
+            ("interval_type_name", 128),
+            ("workout_state_name", 200),
+            ("rowing_state_name", 5),
+            ("stroke_state_name", 99),
+            ("duration_type_name", 0x10),
+            ("screen_type_name", 99),
+            ("erg_machine_type_name", 99),
+        ],
+    )
+    def test_invalid_raises(self, func: str, invalid_value: int) -> None:
+        with pytest.raises(ValueError, match="invalid"):
+            getattr(csafe_codec, func)(invalid_value)
+
+
+class TestEnumValuesDicts:
+    """Enum values functions return complete dicts."""
+
+    @pytest.mark.parametrize(
+        ("func", "expected_count"),
+        [
+            ("workout_type_values", 13),
+            ("interval_type_values", 11),
+            ("workout_state_values", 14),
+            ("rowing_state_values", 2),
+            ("stroke_state_values", 5),
+            ("duration_type_values", 4),
+            ("screen_type_values", 6),
+            ("erg_machine_type_values", 23),
+        ],
+    )
+    def test_entry_count(self, func: str, expected_count: int) -> None:
+        values = getattr(csafe_codec, func)()
+        assert isinstance(values, dict)
+        assert len(values) == expected_count
+
+    def test_workout_type_values_spot_check(self) -> None:
+        vals = csafe_codec.workout_type_values()
+        assert vals["JustRowNoSplits"] == 0
+        assert vals["FixedCalorieInterval"] == 12
+
+    def test_interval_type_has_none_at_255(self) -> None:
+        vals = csafe_codec.interval_type_values()
+        assert vals["None"] == 255
+
+
+class TestCommandIdConstants:
+    """CMD_* constants match CSAFE spec byte values."""
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            # Short commands (representative)
+            ("CMD_GET_STATUS", 0x80),
+            ("CMD_RESET", 0x81),
+            ("CMD_GO_IDLE", 0x82),
+            ("CMD_GET_VERSION", 0x91),
+            ("CMD_GET_CALORIES", 0xA3),
+            ("CMD_GET_HEART_RATE", 0xB0),
+            # Long commands (representative)
+            ("CMD_AUTO_UPLOAD", 0x01),
+            ("CMD_SET_TIME", 0x11),
+            ("CMD_SET_PROGRAM", 0x24),
+            ("CMD_GET_CAPS", 0x70),
+            # PM wrapper commands
+            ("CMD_SET_USER_CFG1", 0x1A),
+            ("CMD_SET_PM_CFG", 0x76),
+            ("CMD_SET_PM_DATA", 0x77),
+            ("CMD_GET_PM_CFG", 0x7E),
+            ("CMD_GET_PM_DATA", 0x7F),
+        ],
+    )
+    def test_constant_value(self, name: str, expected: int) -> None:
+        assert getattr(csafe_codec, name) == expected

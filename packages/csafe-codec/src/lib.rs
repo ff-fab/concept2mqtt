@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
+pub mod commands;
 pub mod framing;
+mod py_commands;
 
 /// CSAFE protocol codec for Concept2 PM5 rowing monitors.
 ///
@@ -18,6 +20,12 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("STUFF_MARKER", framing::STUFF_MARKER)?;
     m.add("MAX_FRAME_SIZE", framing::MAX_FRAME_SIZE)?;
 
+    // Address constants (extended frames)
+    m.add("ADDR_PC_HOST", framing::ADDR_PC_HOST)?;
+    m.add("ADDR_DEFAULT_SECONDARY", framing::ADDR_DEFAULT_SECONDARY)?;
+    m.add("ADDR_RESERVED", framing::ADDR_RESERVED)?;
+    m.add("ADDR_BROADCAST", framing::ADDR_BROADCAST)?;
+
     // Functions
     m.add_function(wrap_pyfunction!(py_stuff_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(py_unstuff_bytes, m)?)?;
@@ -25,6 +33,13 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_validate_checksum, m)?)?;
     m.add_function(wrap_pyfunction!(py_build_standard_frame, m)?)?;
     m.add_function(wrap_pyfunction!(py_parse_standard_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(py_build_extended_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_extended_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parse_frame, m)?)?;
+
+    // Command types and enums
+    py_commands::register(m)?;
+
     Ok(())
 }
 
@@ -73,6 +88,54 @@ fn py_build_standard_frame(contents: &[u8]) -> PyResult<Vec<u8>> {
 fn py_parse_standard_frame(frame: &[u8]) -> PyResult<Vec<u8>> {
     framing::parse_standard_frame(frame)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Build an extended CSAFE frame with destination and source addresses.
+///
+/// Raises ``ValueError`` if the resulting frame exceeds the 120-byte limit.
+#[pyfunction(name = "build_extended_frame")]
+fn py_build_extended_frame(destination: u8, source: u8, contents: &[u8]) -> PyResult<Vec<u8>> {
+    framing::build_extended_frame(destination, source, contents)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Parse an extended CSAFE frame, returning ``(destination, source, contents)``.
+///
+/// Raises ``ValueError`` on missing flags, frames too short for the address
+/// header, unstuffing errors, or checksum mismatches.
+#[pyfunction(name = "parse_extended_frame")]
+fn py_parse_extended_frame(frame: &[u8]) -> PyResult<(u8, u8, Vec<u8>)> {
+    let ef = framing::parse_extended_frame(frame)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok((ef.destination, ef.source, ef.contents))
+}
+
+/// Parse a CSAFE frame, auto-detecting standard vs extended by the start byte.
+///
+/// Returns a dict with:
+/// - ``{"type": "standard", "contents": bytes}`` for standard frames
+/// - ``{"type": "extended", "destination": int, "source": int, "contents": bytes}``
+///   for extended frames
+///
+/// Raises ``ValueError`` on parse errors.
+#[pyfunction(name = "parse_frame")]
+fn py_parse_frame(py: Python<'_>, frame: &[u8]) -> PyResult<PyObject> {
+    let result = framing::parse_frame(frame)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let dict = pyo3::types::PyDict::new(py);
+    match result {
+        framing::Frame::Standard(contents) => {
+            dict.set_item("type", "standard")?;
+            dict.set_item("contents", pyo3::types::PyBytes::new(py, &contents))?;
+        }
+        framing::Frame::Extended(ef) => {
+            dict.set_item("type", "extended")?;
+            dict.set_item("destination", ef.destination)?;
+            dict.set_item("source", ef.source)?;
+            dict.set_item("contents", pyo3::types::PyBytes::new(py, &ef.contents))?;
+        }
+    }
+    Ok(dict.into())
 }
 
 #[cfg(test)]

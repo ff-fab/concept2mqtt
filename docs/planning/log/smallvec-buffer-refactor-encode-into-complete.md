@@ -35,8 +35,6 @@ wrappers.
 - `encode_commands_into_multiple` — new
 - `encode_into_proprietary_sub_command` — new
 
-**Review Status:** APPROVED
-
 **Git Commit Message:**
 
 ```text

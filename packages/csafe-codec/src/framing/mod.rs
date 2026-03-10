@@ -8,7 +8,7 @@ pub type FrameBuf = SmallVec<[u8; 128]>;
 pub type StuffBuf = SmallVec<[u8; 256]>;
 
 // CSAFE frame-level primitives: byte stuffing, checksum, frame building,
-// and frame parser.
+// and frame parsing.
 //
 // Byte stuffing (protocol.yaml §byte_stuffing, Table 6) ensures the four
 // flag bytes 0xF0–0xF3 never appear inside frame contents or the checksum.
@@ -84,7 +84,8 @@ impl std::fmt::Display for StuffingError {
 /// reuse a single buffer across multiple stuffing operations (e.g. frame
 /// building) to avoid intermediate heap allocations.
 pub fn stuff_into(data: &[u8], buf: &mut StuffBuf) {
-    buf.reserve(data.len());
+    // Worst-case expansion is 2× input (every byte in `STUFF_RANGE`).
+    buf.reserve(data.len().saturating_mul(2));
     for &b in data {
         if STUFF_RANGE.contains(&b) {
             buf.push(STUFF_MARKER);
@@ -216,7 +217,9 @@ impl std::fmt::Display for FrameError {
 /// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
 /// the 120-byte protocol limit.  On error, `buf` is left unchanged.
 pub fn build_standard_frame_into(contents: &[u8], buf: &mut FrameBuf) -> Result<(), FrameError> {
-    if contents.len() > MAX_FRAME_SIZE {
+    // Minimum overhead: start(1) + checksum(1) + stop(1) = 3 bytes.
+    // Anything larger is guaranteed to exceed the 120-byte limit.
+    if contents.len() > MAX_FRAME_SIZE - 3 {
         return Err(FrameError::TooLarge {
             actual: FRAME_ENVELOPE + contents.len() + 1,
         });
@@ -227,12 +230,7 @@ pub fn build_standard_frame_into(contents: &[u8], buf: &mut FrameBuf) -> Result<
     buf.push(STANDARD_START);
 
     for &b in contents {
-        if STUFF_RANGE.contains(&b) {
-            buf.push(STUFF_MARKER);
-            buf.push(b - EXTENDED_START);
-        } else {
-            buf.push(b);
-        }
+        stuff_byte_into(b, buf);
     }
 
     let checksum = compute_checksum(contents);
@@ -345,7 +343,7 @@ impl From<StuffingError> for ParseError {
 ///
 /// Returns [`ParseError`] for missing flags, empty frames, unstuffing
 /// failures, or checksum mismatches.
-pub fn parse_standard_frame(frame: &[u8]) -> Result<FrameBuf, ParseError> {
+pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
     if frame.is_empty() {
         return Err(ParseError::EmptyFrame);
     }
@@ -388,7 +386,7 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<FrameBuf, ParseError> {
     }
 
     unstuffed.pop(); // remove checksum byte
-    Ok(unstuffed)
+    Ok(unstuffed.into_vec())
 }
 
 // ── Extended frame building ─────────────────────────────────────────────
@@ -409,7 +407,8 @@ pub fn build_extended_frame_into(
     contents: &[u8],
     buf: &mut FrameBuf,
 ) -> Result<(), FrameError> {
-    if contents.len() > MAX_FRAME_SIZE {
+    // Minimum overhead: start(1) + dst(1) + src(1) + checksum(1) + stop(1) = 5 bytes.
+    if contents.len() > MAX_FRAME_SIZE - 5 {
         return Err(FrameError::TooLarge {
             actual: FRAME_ENVELOPE + contents.len() + 3,
         });
@@ -422,12 +421,7 @@ pub fn build_extended_frame_into(
     stuff_byte_into(source, buf);
 
     for &b in contents {
-        if STUFF_RANGE.contains(&b) {
-            buf.push(STUFF_MARKER);
-            buf.push(b - EXTENDED_START);
-        } else {
-            buf.push(b);
-        }
+        stuff_byte_into(b, buf);
     }
 
     let checksum = compute_checksum(contents);
@@ -477,7 +471,7 @@ pub struct ExtendedFrame {
     /// Source address (unstuffed).
     pub source: u8,
     /// Raw frame contents (unstuffed, checksum removed).
-    pub contents: FrameBuf,
+    pub contents: Vec<u8>,
 }
 
 /// Parse an extended CSAFE frame from wire bytes.
@@ -552,7 +546,7 @@ pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
     Ok(ExtendedFrame {
         destination,
         source,
-        contents: FrameBuf::from_slice(contents),
+        contents: contents.to_vec(),
     })
 }
 
@@ -562,7 +556,7 @@ pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
     /// A standard frame containing raw contents.
-    Standard(FrameBuf),
+    Standard(Vec<u8>),
     /// An extended frame with addressing and raw contents.
     Extended(ExtendedFrame),
 }

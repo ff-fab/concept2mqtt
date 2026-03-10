@@ -216,6 +216,10 @@ impl GetPmCfgCommand {
                 machine_type,
             } => {
                 let len = 4 + user_id_string.len() + 1;
+                assert!(
+                    len <= u8::MAX as usize,
+                    "LocalRaceParticipant payload exceeds 255 bytes"
+                );
                 buf.extend_from_slice(&[0x53, len as u8]);
                 buf.extend_from_slice(&hw_address.to_le_bytes());
                 buf.extend_from_slice(user_id_string);
@@ -231,7 +235,9 @@ impl GetPmCfgCommand {
                 structure_id,
                 split_interval_number,
             } => buf.extend_from_slice(&[0x58, 2, *structure_id, *split_interval_number]),
-            _ => unreachable!(),
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
         }
     }
 }
@@ -515,7 +521,9 @@ impl GetPmDataCommand {
             }
             Self::CurrentWorkoutHash { unused } => buf.extend_from_slice(&[0x72, 1, *unused]),
             Self::GameScore { unused } => buf.extend_from_slice(&[0x78, 1, *unused]),
-            _ => unreachable!(),
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
         }
     }
 }
@@ -811,7 +819,12 @@ impl SetPmCfgCommand {
                 password,
             } => {
                 buf.push(id);
-                buf.push((4 + password.len()) as u8);
+                let len = 4 + password.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "AuthenPassword payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.extend_from_slice(&hw_address.to_le_bytes());
                 buf.extend_from_slice(password);
             }
@@ -867,7 +880,12 @@ impl SetPmCfgCommand {
             Self::ScreenErrorMode { mode } => buf.extend_from_slice(&[id, 1, *mode]),
             Self::CableTest { mode, data } => {
                 buf.push(id);
-                buf.push((1 + data.len()) as u8);
+                let len = 1 + data.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "CableTest payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.push(*mode);
                 buf.extend_from_slice(data);
             }
@@ -924,7 +942,9 @@ impl SetPmCfgCommand {
                 buf.push(*datapage_pattern);
                 buf.push(*activity_timeout);
             }
-            _ => unreachable!(),
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
         }
     }
 }
@@ -1088,7 +1108,12 @@ impl SetPmDataCommand {
                 racer_name,
             } => {
                 buf.push(id);
-                buf.push((1 + racer_name.len()) as u8);
+                let len = 1 + racer_name.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "RaceParticipant payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.push(*racer_id);
                 buf.extend_from_slice(racer_name);
             }
@@ -1128,14 +1153,24 @@ impl SetPmDataCommand {
                 data,
             } => {
                 buf.push(id);
-                buf.push((5 + data.len()) as u8);
+                let len = 5 + data.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "LogCardMemory payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.extend_from_slice(&start_address.to_le_bytes());
                 buf.push(*block_length);
                 buf.extend_from_slice(data);
             }
             Self::DisplayString { characters } => {
                 buf.push(id);
-                buf.push(characters.len() as u8);
+                let len = characters.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "DisplayString payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.extend_from_slice(characters);
             }
             Self::DisplayBitmap {
@@ -1144,7 +1179,12 @@ impl SetPmDataCommand {
                 data,
             } => {
                 buf.push(id);
-                buf.push((3 + data.len()) as u8);
+                let len = 3 + data.len();
+                assert!(
+                    len <= u8::MAX as usize,
+                    "DisplayBitmap payload exceeds 255 bytes"
+                );
+                buf.push(len as u8);
                 buf.extend_from_slice(&bitmap_index.to_le_bytes());
                 buf.push(*block_length);
                 buf.extend_from_slice(data);
@@ -1222,7 +1262,9 @@ impl SetPmDataCommand {
                 buf.extend_from_slice(&race_prompt_bitmap_duration.to_le_bytes());
                 buf.extend_from_slice(&time_cap_duration.to_le_bytes());
             }
-            _ => unreachable!(),
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
         }
     }
 }

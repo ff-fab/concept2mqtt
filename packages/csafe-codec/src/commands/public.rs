@@ -291,7 +291,9 @@ impl Command {
                 encode_wrapper_into(0x7F, commands, GetPmDataCommand::encode_into, buf)
             }
 
-            _ => unreachable!(),
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
         }
     }
 }
@@ -309,5 +311,10 @@ fn encode_wrapper_into<T>(
     for cmd in cmds {
         encode_fn(cmd, buf);
     }
-    buf[len_idx] = (buf.len() - payload_start) as u8;
+    let payload_len = buf.len() - payload_start;
+    assert!(
+        payload_len <= u8::MAX as usize,
+        "CSAFE wrapper payload too long: {payload_len} bytes (max 255)"
+    );
+    buf[len_idx] = payload_len as u8;
 }

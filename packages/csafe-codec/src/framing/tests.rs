@@ -1,5 +1,4 @@
 use super::*;
-use smallvec::smallvec;
 
 // -- stuff_bytes ------------------------------------------------------
 
@@ -989,7 +988,7 @@ fn ext_roundtrip_all_single_bytes() {
 fn parse_frame_standard() {
     let wire = build_standard_frame(&[0x91]).unwrap();
     let result = parse_frame(&wire).unwrap();
-    assert_eq!(result, Frame::Standard(smallvec![0x91]));
+    assert_eq!(result, Frame::Standard(vec![0x91]));
 }
 
 #[test]
@@ -1001,7 +1000,7 @@ fn parse_frame_extended() {
         Frame::Extended(ExtendedFrame {
             destination: 0xFD,
             source: 0x00,
-            contents: smallvec![0x91],
+            contents: vec![0x91],
         })
     );
 }

@@ -220,4 +220,76 @@ impl Command {
     pub fn is_short(&self) -> bool {
         self.id() & 0x80 != 0
     }
+
+    /// Encode this command into raw wire bytes (without framing or byte-stuffing).
+    pub fn encode(&self) -> Vec<u8> {
+        if self.is_short() {
+            return vec![self.id()];
+        }
+
+        match self {
+            Self::AutoUpload { configuration } => vec![0x01, 0x01, *configuration],
+            Self::IdDigits { count } => vec![0x10, 0x01, *count],
+            Self::SetTime {
+                hour,
+                minute,
+                second,
+            } => vec![0x11, 0x03, *hour, *minute, *second],
+            Self::SetDate { year, month, day } => vec![0x12, 0x03, *year, *month, *day],
+            Self::SetTimeout { timeout } => vec![0x13, 0x01, *timeout],
+            Self::SetTWork {
+                hours,
+                minutes,
+                seconds,
+            } => {
+                vec![0x20, 0x03, *hours, *minutes, *seconds]
+            }
+            Self::SetHorizontal {
+                distance_lsb,
+                distance_msb,
+                units,
+            } => {
+                vec![0x21, 0x03, *distance_lsb, *distance_msb, *units]
+            }
+            Self::SetCalories {
+                calories_lsb,
+                calories_msb,
+            } => {
+                vec![0x23, 0x02, *calories_lsb, *calories_msb]
+            }
+            Self::SetProgram { program, unused } => vec![0x24, 0x02, *program, *unused],
+            Self::SetPower {
+                watts_lsb,
+                watts_msb,
+                units,
+            } => {
+                vec![0x34, 0x03, *watts_lsb, *watts_msb, *units]
+            }
+            Self::GetCaps { capability_code } => vec![0x70, 0x01, *capability_code],
+
+            // Wrapper commands: encode sub-commands and prepend opcode + total length.
+            Self::SetUserCfg1 { commands } => {
+                encode_wrapper(0x1A, commands, SetUserCfg1Command::encode)
+            }
+            Self::SetPmCfg { commands } => encode_wrapper(0x76, commands, SetPmCfgCommand::encode),
+            Self::SetPmData { commands } => {
+                encode_wrapper(0x77, commands, SetPmDataCommand::encode)
+            }
+            Self::GetPmCfg { commands } => encode_wrapper(0x7E, commands, GetPmCfgCommand::encode),
+            Self::GetPmData { commands } => {
+                encode_wrapper(0x7F, commands, GetPmDataCommand::encode)
+            }
+
+            // Short commands already handled above; this is unreachable.
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Helper: encode a wrapper command (opcode + byte-count + concatenated sub-commands).
+fn encode_wrapper<T>(opcode: u8, cmds: &[T], encode_fn: fn(&T) -> Vec<u8>) -> Vec<u8> {
+    let payload: Vec<u8> = cmds.iter().flat_map(encode_fn).collect();
+    let mut out = vec![opcode, payload.len() as u8];
+    out.extend(payload);
+    out
 }

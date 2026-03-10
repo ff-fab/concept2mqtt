@@ -87,7 +87,7 @@ fn py_build_standard_frame(contents: &[u8]) -> PyResult<Vec<u8>> {
 #[pyfunction(name = "parse_standard_frame")]
 fn py_parse_standard_frame(frame: &[u8]) -> PyResult<Vec<u8>> {
     framing::parse_standard_frame(frame)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+        .map_err(|e: framing::ParseError| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
 /// Build an extended CSAFE frame with destination and source addresses.

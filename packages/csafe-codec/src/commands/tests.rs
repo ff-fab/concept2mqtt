@@ -1,4 +1,5 @@
 use super::*;
+use crate::framing::FrameBuf;
 
 // -- WorkoutType ------------------------------------------------------
 
@@ -197,6 +198,381 @@ fn command_id_short_commands() {
     for (cmd, expected_id) in cases {
         assert_eq!(cmd.id(), *expected_id, "mismatch for {cmd:?}");
     }
+}
+
+// -- Encode: short public commands ------------------------------------
+
+#[test]
+fn encode_all_short_commands_single_byte() {
+    let short_cmds: &[(Command, u8)] = &[
+        (Command::GetStatus, 0x80),
+        (Command::Reset, 0x81),
+        (Command::GoIdle, 0x82),
+        (Command::GoHaveId, 0x83),
+        (Command::GoInUse, 0x85),
+        (Command::GoFinished, 0x86),
+        (Command::GoReady, 0x87),
+        (Command::BadId, 0x88),
+        (Command::GetVersion, 0x91),
+        (Command::GetId, 0x92),
+        (Command::GetUnits, 0x93),
+        (Command::GetSerial, 0x94),
+        (Command::GetOdometer, 0x9B),
+        (Command::GetErrorCode, 0x9C),
+        (Command::GetTWork, 0xA0),
+        (Command::GetHorizontal, 0xA1),
+        (Command::GetCalories, 0xA3),
+        (Command::GetProgram, 0xA4),
+        (Command::GetPace, 0xA6),
+        (Command::GetCadence, 0xA7),
+        (Command::GetUserInfo, 0xAB),
+        (Command::GetHeartRate, 0xB0),
+        (Command::GetPower, 0xB4),
+    ];
+    for (cmd, expected) in short_cmds {
+        assert_eq!(cmd.encode(), vec![*expected], "encode mismatch for {cmd:?}");
+    }
+}
+
+// -- Encode: long public commands -------------------------------------
+
+#[test]
+fn encode_auto_upload() {
+    assert_eq!(
+        Command::AutoUpload {
+            configuration: 0xAB
+        }
+        .encode(),
+        vec![0x01, 0x01, 0xAB]
+    );
+}
+
+#[test]
+fn encode_set_time() {
+    assert_eq!(
+        Command::SetTime {
+            hour: 14,
+            minute: 30,
+            second: 0
+        }
+        .encode(),
+        vec![0x11, 0x03, 14, 30, 0]
+    );
+}
+
+#[test]
+fn encode_set_date() {
+    assert_eq!(
+        Command::SetDate {
+            year: 26,
+            month: 3,
+            day: 9
+        }
+        .encode(),
+        vec![0x12, 0x03, 26, 3, 9]
+    );
+}
+
+#[test]
+fn encode_set_timeout() {
+    assert_eq!(
+        Command::SetTimeout { timeout: 60 }.encode(),
+        vec![0x13, 0x01, 60]
+    );
+}
+
+#[test]
+fn encode_set_horizontal() {
+    assert_eq!(
+        Command::SetHorizontal {
+            distance_lsb: 0xE8,
+            distance_msb: 0x03,
+            units: 0x24
+        }
+        .encode(),
+        vec![0x21, 0x03, 0xE8, 0x03, 0x24]
+    );
+}
+
+#[test]
+fn encode_set_calories() {
+    assert_eq!(
+        Command::SetCalories {
+            calories_lsb: 0xF4,
+            calories_msb: 0x01
+        }
+        .encode(),
+        vec![0x23, 0x02, 0xF4, 0x01]
+    );
+}
+
+#[test]
+fn encode_set_program() {
+    assert_eq!(
+        Command::SetProgram {
+            program: 5,
+            unused: 0
+        }
+        .encode(),
+        vec![0x24, 0x02, 5, 0]
+    );
+}
+
+#[test]
+fn encode_set_power() {
+    assert_eq!(
+        Command::SetPower {
+            watts_lsb: 0xC8,
+            watts_msb: 0x00,
+            units: 0x24
+        }
+        .encode(),
+        vec![0x34, 0x03, 0xC8, 0x00, 0x24]
+    );
+}
+
+#[test]
+fn encode_get_caps() {
+    assert_eq!(
+        Command::GetCaps {
+            capability_code: 0x02
+        }
+        .encode(),
+        vec![0x70, 0x01, 0x02]
+    );
+}
+
+#[test]
+fn encode_id_digits() {
+    assert_eq!(Command::IdDigits { count: 5 }.encode(), vec![0x10, 0x01, 5]);
+}
+
+#[test]
+fn encode_set_twork() {
+    assert_eq!(
+        Command::SetTWork {
+            hours: 1,
+            minutes: 30,
+            seconds: 0
+        }
+        .encode(),
+        vec![0x20, 0x03, 1, 30, 0]
+    );
+}
+
+// -- Encode: wrapper commands -----------------------------------------
+
+#[test]
+fn encode_wrapper_empty() {
+    let cmd = Command::GetPmCfg { commands: vec![] };
+    assert_eq!(cmd.encode(), vec![0x7E, 0x00]);
+}
+
+#[test]
+fn encode_wrapper_get_pm_cfg_short_sub() {
+    let cmd = Command::GetPmCfg {
+        commands: vec![GetPmCfgCommand::FwVersion, GetPmCfgCommand::HwVersion],
+    };
+    assert_eq!(cmd.encode(), vec![0x7E, 0x02, 0x80, 0x81]);
+}
+
+#[test]
+fn encode_wrapper_get_pm_cfg_long_sub() {
+    let cmd = Command::GetPmCfg {
+        commands: vec![GetPmCfgCommand::ErgNumberRequest {
+            logical_erg_number: 3,
+        }],
+    };
+    assert_eq!(cmd.encode(), vec![0x7E, 0x03, 0x51, 0x01, 3]);
+}
+
+#[test]
+fn encode_wrapper_set_user_cfg1() {
+    let cmd = Command::SetUserCfg1 {
+        commands: vec![
+            SetUserCfg1Command::WorkoutType { workout_type: 2 },
+            SetUserCfg1Command::IntervalType { interval_type: 1 },
+        ],
+    };
+    // sub1: [0x01, 1, 2] = 3 bytes; sub2: [0x17, 1, 1] = 3 bytes; total = 6
+    assert_eq!(cmd.encode(), vec![0x1A, 0x06, 0x01, 1, 2, 0x17, 1, 1]);
+}
+
+#[test]
+fn encode_wrapper_set_pm_data_short_sub() {
+    let cmd = Command::SetPmData {
+        commands: vec![SetPmDataCommand::SyncDistance],
+    };
+    assert_eq!(cmd.encode(), vec![0x77, 0x01, 0xD0]);
+}
+
+// -- encode_commands --------------------------------------------------
+
+#[test]
+fn encode_commands_multiple() {
+    let cmds = vec![
+        Command::GetStatus,
+        Command::GoIdle,
+        Command::GetCaps { capability_code: 1 },
+    ];
+    assert_eq!(encode_commands(&cmds), vec![0x80, 0x82, 0x70, 0x01, 1]);
+}
+
+#[test]
+fn encode_commands_empty() {
+    let empty: Vec<u8> = vec![];
+    assert_eq!(encode_commands(&[]), empty);
+}
+
+// -- Encode: proprietary sub-command samples --------------------------
+
+#[test]
+fn encode_get_pm_cfg_erg_number() {
+    let cmd = GetPmCfgCommand::ErgNumber {
+        hw_address: 0x01020304,
+    };
+    assert_eq!(cmd.encode(), vec![0x50, 4, 0x04, 0x03, 0x02, 0x01]);
+}
+
+#[test]
+fn encode_get_pm_cfg_current_log_structure() {
+    let cmd = GetPmCfgCommand::CurrentLogStructure {
+        structure_id: 1,
+        split_interval_number: 5,
+    };
+    assert_eq!(cmd.encode(), vec![0x58, 2, 1, 5]);
+}
+
+#[test]
+fn encode_get_pm_cfg_local_race_participant() {
+    let cmd = GetPmCfgCommand::LocalRaceParticipant {
+        hw_address: 0x00000001,
+        user_id_string: vec![0x41, 0x42],
+        machine_type: 5,
+    };
+    assert_eq!(
+        cmd.encode(),
+        vec![0x53, 7, 0x01, 0x00, 0x00, 0x00, 0x41, 0x42, 5]
+    );
+}
+
+#[test]
+fn encode_get_pm_data_memory() {
+    let cmd = GetPmDataCommand::Memory {
+        device_type: 1,
+        start_address: 0x00001000,
+        block_length: 32,
+    };
+    assert_eq!(cmd.encode(), vec![0x68, 6, 1, 0x00, 0x10, 0x00, 0x00, 32]);
+}
+
+#[test]
+fn encode_get_pm_data_diag_log_record() {
+    let cmd = GetPmDataCommand::DiagLogRecord {
+        record_type: 2,
+        record_index: 0x0100,
+        record_offset_bytes: 0x0040,
+    };
+    assert_eq!(cmd.encode(), vec![0x71, 5, 2, 0x00, 0x01, 0x40, 0x00]);
+}
+
+#[test]
+fn encode_get_pm_data_short() {
+    assert_eq!(GetPmDataCommand::WorkTime.encode(), vec![0xA0]);
+    assert_eq!(GetPmDataCommand::DragFactor.encode(), vec![0xC1]);
+}
+
+#[test]
+fn encode_set_pm_cfg_workout_duration() {
+    let cmd = SetPmCfgCommand::WorkoutDuration {
+        duration_type: 0x00,
+        duration: 300,
+    };
+    let mut expected = vec![0x03, 5, 0x00];
+    expected.extend_from_slice(&300u32.to_le_bytes());
+    assert_eq!(cmd.encode(), expected);
+}
+
+#[test]
+fn encode_set_pm_cfg_reset_erg_number_short() {
+    assert_eq!(SetPmCfgCommand::ResetErgNumber.encode(), vec![0xE1]);
+}
+
+#[test]
+fn encode_set_pm_cfg_authen_password() {
+    let cmd = SetPmCfgCommand::AuthenPassword {
+        hw_address: 0xAABBCCDD,
+        password: vec![1, 2, 3],
+    };
+    assert_eq!(cmd.encode(), vec![0x1A, 7, 0xDD, 0xCC, 0xBB, 0xAA, 1, 2, 3]);
+}
+
+#[test]
+fn encode_set_pm_cfg_hrm() {
+    let cmd = SetPmCfgCommand::Hrm {
+        mfg_id: 1,
+        device_type: 120,
+        device_num: 0x1234,
+    };
+    assert_eq!(cmd.encode(), vec![0x2B, 4, 1, 120, 0x34, 0x12]);
+}
+
+#[test]
+fn encode_set_pm_cfg_sensor_channel() {
+    let cmd = SetPmCfgCommand::SensorChannel {
+        rf_frequency: 57,
+        rf_period_hz: 8070,
+        datapage_pattern: 1,
+        activity_timeout: 30,
+    };
+    let mut expected = vec![0x2F, 5, 57];
+    expected.extend_from_slice(&8070u16.to_le_bytes());
+    expected.push(1);
+    expected.push(30);
+    assert_eq!(cmd.encode(), expected);
+}
+
+#[test]
+fn encode_set_pm_data_race_participant() {
+    let cmd = SetPmDataCommand::RaceParticipant {
+        racer_id: 1,
+        racer_name: vec![0x41, 0x42, 0x43],
+    };
+    assert_eq!(cmd.encode(), vec![0x32, 4, 1, 0x41, 0x42, 0x43]);
+}
+
+#[test]
+fn encode_set_pm_data_display_string() {
+    let cmd = SetPmDataCommand::DisplayString {
+        characters: vec![0x48, 0x49],
+    };
+    assert_eq!(cmd.encode(), vec![0x35, 2, 0x48, 0x49]);
+}
+
+#[test]
+fn encode_set_pm_data_short() {
+    assert_eq!(SetPmDataCommand::SyncDistance.encode(), vec![0xD0]);
+    assert_eq!(SetPmDataCommand::SyncDataAll.encode(), vec![0xD8]);
+}
+
+#[test]
+fn encode_set_pm_data_led_backlight() {
+    let cmd = SetPmDataCommand::LedBacklight {
+        state: 1,
+        intensity: 200,
+    };
+    assert_eq!(cmd.encode(), vec![0x3B, 2, 1, 200]);
+}
+
+#[test]
+fn encode_set_user_cfg1_workout_duration() {
+    let cmd = SetUserCfg1Command::WorkoutDuration {
+        duration_type: 0x00,
+        duration: 1200,
+    };
+    let mut expected = vec![0x03, 5, 0x00];
+    expected.extend_from_slice(&1200u32.to_le_bytes());
+    assert_eq!(cmd.encode(), expected);
 }
 
 #[test]
@@ -575,4 +951,57 @@ fn command_wrapper_typed() {
         ],
     };
     assert_eq!(cmd.id(), 0x1A);
+}
+
+// -- encode_into / encode_commands_into --------------------------------
+
+#[test]
+fn encode_into_short_command() {
+    let mut buf = FrameBuf::new();
+    Command::GetStatus.encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x80]);
+}
+
+#[test]
+fn encode_into_long_command() {
+    let mut buf = FrameBuf::new();
+    Command::SetTime {
+        hour: 14,
+        minute: 30,
+        second: 0,
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x11, 0x03, 14, 30, 0]);
+}
+
+#[test]
+fn encode_into_wrapper_command() {
+    let mut buf = FrameBuf::new();
+    Command::GetPmCfg {
+        commands: vec![GetPmCfgCommand::FwVersion, GetPmCfgCommand::HwVersion],
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x7E, 0x02, 0x80, 0x81]);
+}
+
+#[test]
+fn encode_commands_into_multiple() {
+    let mut buf = FrameBuf::new();
+    let cmds = vec![
+        Command::GetStatus,
+        Command::GoIdle,
+        Command::GetCaps { capability_code: 1 },
+    ];
+    encode_commands_into(&cmds, &mut buf);
+    assert_eq!(&buf[..], &[0x80, 0x82, 0x70, 0x01, 1]);
+}
+
+#[test]
+fn encode_into_proprietary_sub_command() {
+    let mut buf = FrameBuf::new();
+    GetPmCfgCommand::ErgNumber {
+        hw_address: 0x01020304,
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x50, 4, 0x04, 0x03, 0x02, 0x01]);
 }

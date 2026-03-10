@@ -1,4 +1,5 @@
 use super::proprietary::*;
+use crate::framing::FrameBuf;
 
 /// A public CSAFE command that can be placed in a standard frame.
 ///
@@ -223,73 +224,90 @@ impl Command {
 
     /// Encode this command into raw wire bytes (without framing or byte-stuffing).
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         if self.is_short() {
-            return vec![self.id()];
+            buf.push(self.id());
+            return;
         }
 
         match self {
-            Self::AutoUpload { configuration } => vec![0x01, 0x01, *configuration],
-            Self::IdDigits { count } => vec![0x10, 0x01, *count],
+            Self::AutoUpload { configuration } => {
+                buf.extend_from_slice(&[0x01, 0x01, *configuration])
+            }
+            Self::IdDigits { count } => buf.extend_from_slice(&[0x10, 0x01, *count]),
             Self::SetTime {
                 hour,
                 minute,
                 second,
-            } => vec![0x11, 0x03, *hour, *minute, *second],
-            Self::SetDate { year, month, day } => vec![0x12, 0x03, *year, *month, *day],
-            Self::SetTimeout { timeout } => vec![0x13, 0x01, *timeout],
+            } => buf.extend_from_slice(&[0x11, 0x03, *hour, *minute, *second]),
+            Self::SetDate { year, month, day } => {
+                buf.extend_from_slice(&[0x12, 0x03, *year, *month, *day])
+            }
+            Self::SetTimeout { timeout } => buf.extend_from_slice(&[0x13, 0x01, *timeout]),
             Self::SetTWork {
                 hours,
                 minutes,
                 seconds,
-            } => {
-                vec![0x20, 0x03, *hours, *minutes, *seconds]
-            }
+            } => buf.extend_from_slice(&[0x20, 0x03, *hours, *minutes, *seconds]),
             Self::SetHorizontal {
                 distance_lsb,
                 distance_msb,
                 units,
-            } => {
-                vec![0x21, 0x03, *distance_lsb, *distance_msb, *units]
-            }
+            } => buf.extend_from_slice(&[0x21, 0x03, *distance_lsb, *distance_msb, *units]),
             Self::SetCalories {
                 calories_lsb,
                 calories_msb,
-            } => {
-                vec![0x23, 0x02, *calories_lsb, *calories_msb]
+            } => buf.extend_from_slice(&[0x23, 0x02, *calories_lsb, *calories_msb]),
+            Self::SetProgram { program, unused } => {
+                buf.extend_from_slice(&[0x24, 0x02, *program, *unused])
             }
-            Self::SetProgram { program, unused } => vec![0x24, 0x02, *program, *unused],
             Self::SetPower {
                 watts_lsb,
                 watts_msb,
                 units,
-            } => {
-                vec![0x34, 0x03, *watts_lsb, *watts_msb, *units]
+            } => buf.extend_from_slice(&[0x34, 0x03, *watts_lsb, *watts_msb, *units]),
+            Self::GetCaps { capability_code } => {
+                buf.extend_from_slice(&[0x70, 0x01, *capability_code])
             }
-            Self::GetCaps { capability_code } => vec![0x70, 0x01, *capability_code],
 
-            // Wrapper commands: encode sub-commands and prepend opcode + total length.
             Self::SetUserCfg1 { commands } => {
-                encode_wrapper(0x1A, commands, SetUserCfg1Command::encode)
+                encode_wrapper_into(0x1A, commands, SetUserCfg1Command::encode_into, buf)
             }
-            Self::SetPmCfg { commands } => encode_wrapper(0x76, commands, SetPmCfgCommand::encode),
+            Self::SetPmCfg { commands } => {
+                encode_wrapper_into(0x76, commands, SetPmCfgCommand::encode_into, buf)
+            }
             Self::SetPmData { commands } => {
-                encode_wrapper(0x77, commands, SetPmDataCommand::encode)
+                encode_wrapper_into(0x77, commands, SetPmDataCommand::encode_into, buf)
             }
-            Self::GetPmCfg { commands } => encode_wrapper(0x7E, commands, GetPmCfgCommand::encode),
+            Self::GetPmCfg { commands } => {
+                encode_wrapper_into(0x7E, commands, GetPmCfgCommand::encode_into, buf)
+            }
             Self::GetPmData { commands } => {
-                encode_wrapper(0x7F, commands, GetPmDataCommand::encode)
+                encode_wrapper_into(0x7F, commands, GetPmDataCommand::encode_into, buf)
             }
 
-            // Short commands already handled above; this is unreachable.
             _ => unreachable!(),
         }
     }
 }
 
-/// Helper: encode a wrapper command (opcode + byte-count + concatenated sub-commands).
-fn encode_wrapper<T>(opcode: u8, cmds: &[T], encode_fn: fn(&T) -> Vec<u8>) -> Vec<u8> {
-    let payload: Vec<u8> = cmds.iter().flat_map(encode_fn).collect();
-    let mut out = vec![opcode, payload.len() as u8];
-    out.extend(payload);
-    out
+fn encode_wrapper_into<T>(
+    opcode: u8,
+    cmds: &[T],
+    encode_fn: fn(&T, &mut FrameBuf),
+    buf: &mut FrameBuf,
+) {
+    buf.push(opcode);
+    let len_idx = buf.len();
+    buf.push(0);
+    let payload_start = buf.len();
+    for cmd in cmds {
+        encode_fn(cmd, buf);
+    }
+    buf[len_idx] = (buf.len() - payload_start) as u8;
 }

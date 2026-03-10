@@ -3,6 +3,8 @@
 //! Each enum corresponds to one wrapper command and holds the proprietary
 //! sub-commands that may be sent through it.
 
+use crate::framing::FrameBuf;
+
 // =========================================================================
 //  GetPmCfgCommand — wrapper 0x7E (CSAFE_GETPMCFG_CMD)
 // =========================================================================
@@ -189,41 +191,46 @@ impl GetPmCfgCommand {
 
     /// Encode this sub-command into raw wire bytes.
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         if self.is_short() {
-            return vec![self.id()];
+            buf.push(self.id());
+            return;
         }
         match self {
             Self::ErgNumber { hw_address } => {
-                let mut v = vec![0x50, 4];
-                v.extend_from_slice(&hw_address.to_le_bytes());
-                v
+                buf.extend_from_slice(&[0x50, 4]);
+                buf.extend_from_slice(&hw_address.to_le_bytes());
             }
             Self::ErgNumberRequest { logical_erg_number } => {
-                vec![0x51, 1, *logical_erg_number]
+                buf.extend_from_slice(&[0x51, 1, *logical_erg_number]);
             }
-            Self::UserIdString { user_number } => vec![0x52, 1, *user_number],
+            Self::UserIdString { user_number } => buf.extend_from_slice(&[0x52, 1, *user_number]),
             Self::LocalRaceParticipant {
                 hw_address,
                 user_id_string,
                 machine_type,
             } => {
                 let len = 4 + user_id_string.len() + 1;
-                let mut v = vec![0x53, len as u8];
-                v.extend_from_slice(&hw_address.to_le_bytes());
-                v.extend_from_slice(user_id_string);
-                v.push(*machine_type);
-                v
+                buf.extend_from_slice(&[0x53, len as u8]);
+                buf.extend_from_slice(&hw_address.to_le_bytes());
+                buf.extend_from_slice(user_id_string);
+                buf.push(*machine_type);
             }
-            Self::UserId { user_number } => vec![0x54, 1, *user_number],
-            Self::UserProfile { user_number } => vec![0x55, 1, *user_number],
-            Self::HrBeltInfo { user_number } => vec![0x56, 1, *user_number],
-            Self::ExtendedHrBeltInfo { user_number } => vec![0x57, 1, *user_number],
+            Self::UserId { user_number } => buf.extend_from_slice(&[0x54, 1, *user_number]),
+            Self::UserProfile { user_number } => buf.extend_from_slice(&[0x55, 1, *user_number]),
+            Self::HrBeltInfo { user_number } => buf.extend_from_slice(&[0x56, 1, *user_number]),
+            Self::ExtendedHrBeltInfo { user_number } => {
+                buf.extend_from_slice(&[0x57, 1, *user_number])
+            }
             Self::CurrentLogStructure {
                 structure_id,
                 split_interval_number,
-            } => {
-                vec![0x58, 2, *structure_id, *split_interval_number]
-            }
+            } => buf.extend_from_slice(&[0x58, 2, *structure_id, *split_interval_number]),
             _ => unreachable!(),
         }
     }
@@ -450,8 +457,15 @@ impl GetPmDataCommand {
 
     /// Encode this sub-command into raw wire bytes.
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         if self.is_short() {
-            return vec![self.id()];
+            buf.push(self.id());
+            return;
         }
         match self {
             Self::Memory {
@@ -459,46 +473,48 @@ impl GetPmDataCommand {
                 start_address,
                 block_length,
             } => {
-                let mut v = vec![0x68, 6, *device_type];
-                v.extend_from_slice(&start_address.to_le_bytes());
-                v.push(*block_length);
-                v
+                buf.extend_from_slice(&[0x68, 6, *device_type]);
+                buf.extend_from_slice(&start_address.to_le_bytes());
+                buf.push(*block_length);
             }
             Self::LogCardMemory {
                 start_address,
                 block_length,
             } => {
-                let mut v = vec![0x69, 5];
-                v.extend_from_slice(&start_address.to_le_bytes());
-                v.push(*block_length);
-                v
+                buf.extend_from_slice(&[0x69, 5]);
+                buf.extend_from_slice(&start_address.to_le_bytes());
+                buf.push(*block_length);
             }
             Self::InternalLogMemory {
                 start_address,
                 block_length,
             } => {
-                let mut v = vec![0x6A, 5];
-                v.extend_from_slice(&start_address.to_le_bytes());
-                v.push(*block_length);
-                v
+                buf.extend_from_slice(&[0x6A, 5]);
+                buf.extend_from_slice(&start_address.to_le_bytes());
+                buf.push(*block_length);
             }
-            Self::ForcePlotData { block_length } => vec![0x6B, 1, *block_length],
-            Self::HeartbeatData { block_length } => vec![0x6C, 1, *block_length],
-            Self::UiEvents { unused } => vec![0x6D, 1, *unused],
-            Self::StrokeStats { unused } => vec![0x6E, 1, *unused],
-            Self::DiagLogRecordNum { record_type } => vec![0x70, 1, *record_type],
+            Self::ForcePlotData { block_length } => {
+                buf.extend_from_slice(&[0x6B, 1, *block_length])
+            }
+            Self::HeartbeatData { block_length } => {
+                buf.extend_from_slice(&[0x6C, 1, *block_length])
+            }
+            Self::UiEvents { unused } => buf.extend_from_slice(&[0x6D, 1, *unused]),
+            Self::StrokeStats { unused } => buf.extend_from_slice(&[0x6E, 1, *unused]),
+            Self::DiagLogRecordNum { record_type } => {
+                buf.extend_from_slice(&[0x70, 1, *record_type])
+            }
             Self::DiagLogRecord {
                 record_type,
                 record_index,
                 record_offset_bytes,
             } => {
-                let mut v = vec![0x71, 5, *record_type];
-                v.extend_from_slice(&record_index.to_le_bytes());
-                v.extend_from_slice(&record_offset_bytes.to_le_bytes());
-                v
+                buf.extend_from_slice(&[0x71, 5, *record_type]);
+                buf.extend_from_slice(&record_index.to_le_bytes());
+                buf.extend_from_slice(&record_offset_bytes.to_le_bytes());
             }
-            Self::CurrentWorkoutHash { unused } => vec![0x72, 1, *unused],
-            Self::GameScore { unused } => vec![0x78, 1, *unused],
+            Self::CurrentWorkoutHash { unused } => buf.extend_from_slice(&[0x72, 1, *unused]),
+            Self::GameScore { unused } => buf.extend_from_slice(&[0x78, 1, *unused]),
             _ => unreachable!(),
         }
     }
@@ -700,51 +716,50 @@ impl SetPmCfgCommand {
 
     /// Encode this sub-command into raw wire bytes.
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         if self.is_short() {
-            return vec![self.id()];
+            buf.push(self.id());
+            return;
         }
         let id = self.id();
         match self {
-            Self::WorkoutType { workout_type } => vec![id, 1, *workout_type],
+            Self::WorkoutType { workout_type } => buf.extend_from_slice(&[id, 1, *workout_type]),
             Self::WorkoutDuration {
                 duration_type,
                 duration,
             } => {
-                let mut v = vec![id, 5, *duration_type];
-                v.extend_from_slice(&duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *duration_type]);
+                buf.extend_from_slice(&duration.to_le_bytes());
             }
             Self::RestDuration { duration } => {
-                let mut v = vec![id, 2];
-                v.extend_from_slice(&duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 2]);
+                buf.extend_from_slice(&duration.to_le_bytes());
             }
             Self::SplitDuration {
                 duration_type,
                 duration,
             } => {
-                let mut v = vec![id, 5, *duration_type];
-                v.extend_from_slice(&duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *duration_type]);
+                buf.extend_from_slice(&duration.to_le_bytes());
             }
             Self::TargetPaceTime { pace_time } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&pace_time.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&pace_time.to_le_bytes());
             }
-            Self::RaceType { race_type } => vec![id, 1, *race_type],
+            Self::RaceType { race_type } => buf.extend_from_slice(&[id, 1, *race_type]),
             Self::RaceLaneSetup {
                 erg_physical_address,
                 race_lane_number,
-            } => {
-                vec![id, 2, *erg_physical_address, *race_lane_number]
-            }
+            } => buf.extend_from_slice(&[id, 2, *erg_physical_address, *race_lane_number]),
             Self::RaceLaneVerify {
                 erg_physical_address,
                 race_lane_number,
-            } => {
-                vec![id, 2, *erg_physical_address, *race_lane_number]
-            }
+            } => buf.extend_from_slice(&[id, 2, *erg_physical_address, *race_lane_number]),
             Self::RaceStartParams {
                 start_type,
                 count_start,
@@ -752,91 +767,84 @@ impl SetPmCfgCommand {
                 attention_tick_count,
                 row_tick_count,
             } => {
-                let mut v = vec![id, 14, *start_type, *count_start];
-                v.extend_from_slice(&ready_tick_count.to_le_bytes());
-                v.extend_from_slice(&attention_tick_count.to_le_bytes());
-                v.extend_from_slice(&row_tick_count.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 14, *start_type, *count_start]);
+                buf.extend_from_slice(&ready_tick_count.to_le_bytes());
+                buf.extend_from_slice(&attention_tick_count.to_le_bytes());
+                buf.extend_from_slice(&row_tick_count.to_le_bytes());
             }
             Self::ErgSlaveDiscoveryRequest {
                 starting_erg_slave_address,
-            } => {
-                vec![id, 1, *starting_erg_slave_address]
-            }
-            Self::BoatNumber { boat_number } => vec![id, 1, *boat_number],
+            } => buf.extend_from_slice(&[id, 1, *starting_erg_slave_address]),
+            Self::BoatNumber { boat_number } => buf.extend_from_slice(&[id, 1, *boat_number]),
             Self::ErgNumber {
                 hw_address,
                 erg_number,
             } => {
-                let mut v = vec![id, 5];
-                v.extend_from_slice(&hw_address.to_le_bytes());
-                v.push(*erg_number);
-                v
+                buf.extend_from_slice(&[id, 5]);
+                buf.extend_from_slice(&hw_address.to_le_bytes());
+                buf.push(*erg_number);
             }
             Self::ScreenState {
                 screen_type,
                 screen_value,
-            } => {
-                vec![id, 2, *screen_type, *screen_value]
+            } => buf.extend_from_slice(&[id, 2, *screen_type, *screen_value]),
+            Self::ConfigureWorkout { programming_mode } => {
+                buf.extend_from_slice(&[id, 1, *programming_mode])
             }
-            Self::ConfigureWorkout { programming_mode } => vec![id, 1, *programming_mode],
             Self::TargetAvgWatts { avg_watts } => {
-                let mut v = vec![id, 2];
-                v.extend_from_slice(&avg_watts.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 2]);
+                buf.extend_from_slice(&avg_watts.to_le_bytes());
             }
             Self::TargetCalsPerHr { cals_per_hr } => {
-                let mut v = vec![id, 2];
-                v.extend_from_slice(&cals_per_hr.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 2]);
+                buf.extend_from_slice(&cals_per_hr.to_le_bytes());
             }
-            Self::IntervalType { interval_type } => vec![id, 1, *interval_type],
-            Self::WorkoutIntervalCount { interval_count } => vec![id, 1, *interval_count],
-            Self::DisplayUpdateRate { update_rate } => vec![id, 1, *update_rate],
+            Self::IntervalType { interval_type } => buf.extend_from_slice(&[id, 1, *interval_type]),
+            Self::WorkoutIntervalCount { interval_count } => {
+                buf.extend_from_slice(&[id, 1, *interval_count])
+            }
+            Self::DisplayUpdateRate { update_rate } => {
+                buf.extend_from_slice(&[id, 1, *update_rate])
+            }
             Self::AuthenPassword {
                 hw_address,
                 password,
             } => {
-                let len = 4 + password.len();
-                let mut v = vec![id, len as u8];
-                v.extend_from_slice(&hw_address.to_le_bytes());
-                v.extend_from_slice(password);
-                v
+                buf.push(id);
+                buf.push((4 + password.len()) as u8);
+                buf.extend_from_slice(&hw_address.to_le_bytes());
+                buf.extend_from_slice(password);
             }
             Self::TickTime { tick_time } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&tick_time.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&tick_time.to_le_bytes());
             }
             Self::TickTimeOffset { tick_time_offset } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&tick_time_offset.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&tick_time_offset.to_le_bytes());
             }
             Self::RaceDataSampleTicks { sample_tick } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&sample_tick.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&sample_tick.to_le_bytes());
             }
-            Self::RaceOperationType { operation_type } => vec![id, 1, *operation_type],
+            Self::RaceOperationType { operation_type } => {
+                buf.extend_from_slice(&[id, 1, *operation_type])
+            }
             Self::RaceStatusDisplayTicks { display_tick } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&display_tick.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&display_tick.to_le_bytes());
             }
             Self::RaceStatusWarningTicks { warning_tick } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&warning_tick.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&warning_tick.to_le_bytes());
             }
             Self::RaceIdleModeParams {
                 doze_seconds,
                 sleep_seconds,
             } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&doze_seconds.to_le_bytes());
-                v.extend_from_slice(&sleep_seconds.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&doze_seconds.to_le_bytes());
+                buf.extend_from_slice(&sleep_seconds.to_le_bytes());
             }
             Self::DateTime {
                 hours,
@@ -846,33 +854,29 @@ impl SetPmCfgCommand {
                 day,
                 year,
             } => {
-                let mut v = vec![id, 7, *hours, *minutes, *meridiem, *month, *day];
-                v.extend_from_slice(&year.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 7, *hours, *minutes, *meridiem, *month, *day]);
+                buf.extend_from_slice(&year.to_le_bytes());
             }
-            Self::LanguageType { language_type } => vec![id, 1, *language_type],
+            Self::LanguageType { language_type } => buf.extend_from_slice(&[id, 1, *language_type]),
             Self::WifiConfig {
                 config_index,
                 wep_mode,
-            } => {
-                vec![id, 2, *config_index, *wep_mode]
-            }
-            Self::CpuTickRate { cpu_tick_rate } => vec![id, 1, *cpu_tick_rate],
-            Self::LogCardUser { user_number } => vec![id, 1, *user_number],
-            Self::ScreenErrorMode { mode } => vec![id, 1, *mode],
+            } => buf.extend_from_slice(&[id, 2, *config_index, *wep_mode]),
+            Self::CpuTickRate { cpu_tick_rate } => buf.extend_from_slice(&[id, 1, *cpu_tick_rate]),
+            Self::LogCardUser { user_number } => buf.extend_from_slice(&[id, 1, *user_number]),
+            Self::ScreenErrorMode { mode } => buf.extend_from_slice(&[id, 1, *mode]),
             Self::CableTest { mode, data } => {
-                let len = 1 + data.len();
-                let mut v = vec![id, len as u8, *mode];
-                v.extend_from_slice(data);
-                v
+                buf.push(id);
+                buf.push((1 + data.len()) as u8);
+                buf.push(*mode);
+                buf.extend_from_slice(data);
             }
             Self::UserId {
                 user_number,
                 user_id,
             } => {
-                let mut v = vec![id, 5, *user_number];
-                v.extend_from_slice(&user_id.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *user_number]);
+                buf.extend_from_slice(&user_id.to_le_bytes());
             }
             Self::UserProfile {
                 user_number,
@@ -882,25 +886,23 @@ impl SetPmCfgCommand {
                 dob_year,
                 gender,
             } => {
-                let mut v = vec![id, 8, *user_number];
-                v.extend_from_slice(&user_weight.to_le_bytes());
-                v.push(*dob_day);
-                v.push(*dob_month);
-                v.extend_from_slice(&dob_year.to_le_bytes());
-                v.push(*gender);
-                v
+                buf.extend_from_slice(&[id, 8, *user_number]);
+                buf.extend_from_slice(&user_weight.to_le_bytes());
+                buf.push(*dob_day);
+                buf.push(*dob_month);
+                buf.extend_from_slice(&dob_year.to_le_bytes());
+                buf.push(*gender);
             }
             Self::Hrm {
                 mfg_id,
                 device_type,
                 device_num,
             } => {
-                let mut v = vec![id, 4, *mfg_id, *device_type];
-                v.extend_from_slice(&device_num.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4, *mfg_id, *device_type]);
+                buf.extend_from_slice(&device_num.to_le_bytes());
             }
             Self::RaceStartingPhysicalAddress { first_erg_address } => {
-                vec![id, 1, *first_erg_address]
+                buf.extend_from_slice(&[id, 1, *first_erg_address]);
             }
             Self::HrBeltInfo {
                 user_number,
@@ -908,9 +910,8 @@ impl SetPmCfgCommand {
                 device_type,
                 belt_id,
             } => {
-                let mut v = vec![id, 5, *user_number, *mfg_id, *device_type];
-                v.extend_from_slice(&belt_id.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *user_number, *mfg_id, *device_type]);
+                buf.extend_from_slice(&belt_id.to_le_bytes());
             }
             Self::SensorChannel {
                 rf_frequency,
@@ -918,11 +919,10 @@ impl SetPmCfgCommand {
                 datapage_pattern,
                 activity_timeout,
             } => {
-                let mut v = vec![id, 5, *rf_frequency];
-                v.extend_from_slice(&rf_period_hz.to_le_bytes());
-                v.push(*datapage_pattern);
-                v.push(*activity_timeout);
-                v
+                buf.extend_from_slice(&[id, 5, *rf_frequency]);
+                buf.extend_from_slice(&rf_period_hz.to_le_bytes());
+                buf.push(*datapage_pattern);
+                buf.push(*activity_timeout);
             }
             _ => unreachable!(),
         }
@@ -1071,8 +1071,15 @@ impl SetPmDataCommand {
 
     /// Encode this sub-command into raw wire bytes.
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         if self.is_short() {
-            return vec![self.id()];
+            buf.push(self.id());
+            return;
         }
         let id = self.id();
         match self {
@@ -1080,10 +1087,10 @@ impl SetPmDataCommand {
                 racer_id,
                 racer_name,
             } => {
-                let len = 1 + racer_name.len();
-                let mut v = vec![id, len as u8, *racer_id];
-                v.extend_from_slice(racer_name);
-                v
+                buf.push(id);
+                buf.push((1 + racer_name.len()) as u8);
+                buf.push(*racer_id);
+                buf.extend_from_slice(racer_name);
             }
             Self::RaceStatus {
                 racer1_id,
@@ -1101,49 +1108,46 @@ impl SetPmDataCommand {
                 team_distance,
                 mode,
             } => {
-                let mut v = vec![id, 29];
+                buf.extend_from_slice(&[id, 29]);
                 for (rid, pos, delta) in [
                     (racer1_id, racer1_position, racer1_delta),
                     (racer2_id, racer2_position, racer2_delta),
                     (racer3_id, racer3_position, racer3_delta),
                     (racer4_id, racer4_position, racer4_delta),
                 ] {
-                    v.push(*rid);
-                    v.push(*pos);
-                    v.extend_from_slice(&delta.to_le_bytes());
+                    buf.push(*rid);
+                    buf.push(*pos);
+                    buf.extend_from_slice(&delta.to_le_bytes());
                 }
-                v.extend_from_slice(&team_distance.to_le_bytes());
-                v.push(*mode);
-                v
+                buf.extend_from_slice(&team_distance.to_le_bytes());
+                buf.push(*mode);
             }
             Self::LogCardMemory {
                 start_address,
                 block_length,
                 data,
             } => {
-                let len = 5 + data.len();
-                let mut v = vec![id, len as u8];
-                v.extend_from_slice(&start_address.to_le_bytes());
-                v.push(*block_length);
-                v.extend_from_slice(data);
-                v
+                buf.push(id);
+                buf.push((5 + data.len()) as u8);
+                buf.extend_from_slice(&start_address.to_le_bytes());
+                buf.push(*block_length);
+                buf.extend_from_slice(data);
             }
             Self::DisplayString { characters } => {
-                let mut v = vec![id, characters.len() as u8];
-                v.extend_from_slice(characters);
-                v
+                buf.push(id);
+                buf.push(characters.len() as u8);
+                buf.extend_from_slice(characters);
             }
             Self::DisplayBitmap {
                 bitmap_index,
                 block_length,
                 data,
             } => {
-                let len = 3 + data.len();
-                let mut v = vec![id, len as u8];
-                v.extend_from_slice(&bitmap_index.to_le_bytes());
-                v.push(*block_length);
-                v.extend_from_slice(data);
-                v
+                buf.push(id);
+                buf.push((3 + data.len()) as u8);
+                buf.extend_from_slice(&bitmap_index.to_le_bytes());
+                buf.push(*block_length);
+                buf.extend_from_slice(data);
             }
             Self::LocalRaceParticipant {
                 race_type,
@@ -1152,12 +1156,11 @@ impl SetPmDataCommand {
                 race_state,
                 race_lane,
             } => {
-                let mut v = vec![id, 8, *race_type];
-                v.extend_from_slice(&race_length.to_le_bytes());
-                v.push(*race_participants);
-                v.push(*race_state);
-                v.push(*race_lane);
-                v
+                buf.extend_from_slice(&[id, 8, *race_type]);
+                buf.extend_from_slice(&race_length.to_le_bytes());
+                buf.push(*race_participants);
+                buf.push(*race_state);
+                buf.push(*race_lane);
             }
             Self::GameParams {
                 game_type_id,
@@ -1168,14 +1171,13 @@ impl SetPmDataCommand {
                 target_cals_per_hr,
                 target_stroke_rate,
             } => {
-                let mut v = vec![id, 22, *game_type_id];
-                v.extend_from_slice(&workout_duration_time.to_le_bytes());
-                v.extend_from_slice(&split_duration_time.to_le_bytes());
-                v.extend_from_slice(&target_pace_time.to_le_bytes());
-                v.extend_from_slice(&target_avg_watts.to_le_bytes());
-                v.extend_from_slice(&target_cals_per_hr.to_le_bytes());
-                v.push(*target_stroke_rate);
-                v
+                buf.extend_from_slice(&[id, 22, *game_type_id]);
+                buf.extend_from_slice(&workout_duration_time.to_le_bytes());
+                buf.extend_from_slice(&split_duration_time.to_le_bytes());
+                buf.extend_from_slice(&target_pace_time.to_le_bytes());
+                buf.extend_from_slice(&target_avg_watts.to_le_bytes());
+                buf.extend_from_slice(&target_cals_per_hr.to_le_bytes());
+                buf.push(*target_stroke_rate);
             }
             Self::ExtendedHrBeltInfo {
                 unused,
@@ -1183,32 +1185,30 @@ impl SetPmDataCommand {
                 device_type,
                 belt_id,
             } => {
-                let mut v = vec![id, 7, *unused, *mfg_id, *device_type];
-                v.extend_from_slice(&belt_id.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 7, *unused, *mfg_id, *device_type]);
+                buf.extend_from_slice(&belt_id.to_le_bytes());
             }
             Self::ExtendedHrm {
                 mfg_id,
                 device_type,
                 belt_id,
             } => {
-                let mut v = vec![id, 6, *mfg_id, *device_type];
-                v.extend_from_slice(&belt_id.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 6, *mfg_id, *device_type]);
+                buf.extend_from_slice(&belt_id.to_le_bytes());
             }
-            Self::LedBacklight { state, intensity } => vec![id, 2, *state, *intensity],
+            Self::LedBacklight { state, intensity } => {
+                buf.extend_from_slice(&[id, 2, *state, *intensity])
+            }
             Self::DiagLogRecordArchive {
                 record_type,
                 record_index,
             } => {
-                let mut v = vec![id, 3, *record_type];
-                v.extend_from_slice(&record_index.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 3, *record_type]);
+                buf.extend_from_slice(&record_index.to_le_bytes());
             }
             Self::WirelessChannelConfig { channel_bitmask } => {
-                let mut v = vec![id, 4];
-                v.extend_from_slice(&channel_bitmask.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 4]);
+                buf.extend_from_slice(&channel_bitmask.to_le_bytes());
             }
             Self::RaceControlParams {
                 undefined_rest_transition_time,
@@ -1216,12 +1216,11 @@ impl SetPmDataCommand {
                 race_prompt_bitmap_duration,
                 time_cap_duration,
             } => {
-                let mut v = vec![id, 12];
-                v.extend_from_slice(&undefined_rest_transition_time.to_le_bytes());
-                v.extend_from_slice(&undefined_rest_interval.to_le_bytes());
-                v.extend_from_slice(&race_prompt_bitmap_duration.to_le_bytes());
-                v.extend_from_slice(&time_cap_duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 12]);
+                buf.extend_from_slice(&undefined_rest_transition_time.to_le_bytes());
+                buf.extend_from_slice(&undefined_rest_interval.to_le_bytes());
+                buf.extend_from_slice(&race_prompt_bitmap_duration.to_le_bytes());
+                buf.extend_from_slice(&time_cap_duration.to_le_bytes());
             }
             _ => unreachable!(),
         }
@@ -1273,28 +1272,36 @@ impl SetUserCfg1Command {
 
     /// Encode this sub-command into raw wire bytes.
     pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
         let id = self.id();
         match self {
-            Self::WorkoutType { workout_type } => vec![id, 1, *workout_type],
+            Self::WorkoutType { workout_type } => buf.extend_from_slice(&[id, 1, *workout_type]),
             Self::WorkoutDuration {
                 duration_type,
                 duration,
             } => {
-                let mut v = vec![id, 5, *duration_type];
-                v.extend_from_slice(&duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *duration_type]);
+                buf.extend_from_slice(&duration.to_le_bytes());
             }
             Self::SplitDuration {
                 duration_type,
                 duration,
             } => {
-                let mut v = vec![id, 5, *duration_type];
-                v.extend_from_slice(&duration.to_le_bytes());
-                v
+                buf.extend_from_slice(&[id, 5, *duration_type]);
+                buf.extend_from_slice(&duration.to_le_bytes());
             }
-            Self::ConfigureWorkout { programming_mode } => vec![id, 1, *programming_mode],
-            Self::IntervalType { interval_type } => vec![id, 1, *interval_type],
-            Self::WorkoutIntervalCount { interval_count } => vec![id, 1, *interval_count],
+            Self::ConfigureWorkout { programming_mode } => {
+                buf.extend_from_slice(&[id, 1, *programming_mode])
+            }
+            Self::IntervalType { interval_type } => buf.extend_from_slice(&[id, 1, *interval_type]),
+            Self::WorkoutIntervalCount { interval_count } => {
+                buf.extend_from_slice(&[id, 1, *interval_count])
+            }
         }
     }
 }

@@ -153,7 +153,7 @@ tasks:
             echo "ℹ No unit tests found — skipping"
             exit 0
           fi
-          uv run pytest {{.PKG}}/tests/unit/ -v --tb=short --junitxml=results-unit.xml --cov={{.MODULE_NAME}} --cov-branch --cov-report=json
+          uv run pytest {{.PKG}}/tests/unit/ -v --tb=short --junitxml=results-unit.xml --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=json
         ignore_error: true
 
       - |
@@ -198,12 +198,12 @@ tasks:
   test:cov:
     desc: Run tests with coverage (terminal + XML for IDE)
     cmds:
-      - uv run pytest {{.PKG}}/tests/ --cov={{.MODULE_NAME}} --cov-branch --cov-report=term-missing --cov-report=xml
+      - uv run pytest {{.PKG}}/tests/ --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=term-missing --cov-report=xml
 
   test:cov:html:
     desc: Run tests with HTML coverage report
     cmds:
-      - uv run pytest {{.PKG}}/tests/ --cov={{.MODULE_NAME}} --cov-branch --cov-report=html --cov-report=term
+      - uv run pytest {{.PKG}}/tests/ --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=html --cov-report=term
       - cmd: '{{if eq OS "darwin"}}open{{else}}xdg-open{{end}} htmlcov/index.html'
         ignore_error: true
 
@@ -374,7 +374,7 @@ tasks:
           echo "ℹ No unit tests found in {{.PKG}}/tests/unit/ — skipping"
           exit 0
         fi
-        uv run pytest {{.PKG}}/tests/unit/ --cov={{.MODULE_NAME}} --cov-branch --cov-report=xml --cov-report=json --cov-report=term --junitxml=results-unit.xml
+        uv run pytest {{.PKG}}/tests/unit/ --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=xml --cov-report=json --cov-report=term --junitxml=results-unit.xml
         uv run python {{.PKG}}/tests/scripts/summarize_tests.py --coverage-file=coverage.json --fail-under=80
 
   ci:test:integration:

@@ -37,6 +37,30 @@ fn stuff_all_reserved_consecutive() {
     assert_eq!(stuff_bytes(&input), expected);
 }
 
+// -- stuff_into -------------------------------------------------------
+
+#[test]
+fn stuff_into_appends_to_existing_buffer() {
+    let mut buf = StuffBuf::new();
+    buf.push(0xAA); // pre-existing byte
+    stuff_into(&[0x01, 0xF1], &mut buf);
+    assert_eq!(&buf[..], &[0xAA, 0x01, 0xF3, 0x01]);
+}
+
+#[test]
+fn stuff_into_empty_input() {
+    let mut buf = StuffBuf::new();
+    stuff_into(&[], &mut buf);
+    assert!(buf.is_empty());
+}
+
+#[test]
+fn stuff_into_all_reserved() {
+    let mut buf = StuffBuf::new();
+    stuff_into(&[0xF0, 0xF1, 0xF2, 0xF3], &mut buf);
+    assert_eq!(&buf[..], &[0xF3, 0x00, 0xF3, 0x01, 0xF3, 0x02, 0xF3, 0x03]);
+}
+
 // -- unstuff_bytes ----------------------------------------------------
 
 #[test]
@@ -82,6 +106,41 @@ fn roundtrip_all_byte_values() {
     let original: Vec<u8> = (0x00..=0xFF).collect();
     let recovered = unstuff_bytes(&stuff_bytes(&original)).unwrap();
     assert_eq!(recovered, original);
+}
+
+// -- unstuff_into -----------------------------------------------------
+
+#[test]
+fn unstuff_into_appends_to_existing_buffer() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xBB); // pre-existing byte
+    unstuff_into(&[0xF3, 0x01, 0x42], &mut buf).unwrap();
+    assert_eq!(&buf[..], &[0xBB, 0xF1, 0x42]);
+}
+
+#[test]
+fn unstuff_into_empty_input() {
+    let mut buf = FrameBuf::new();
+    unstuff_into(&[], &mut buf).unwrap();
+    assert!(buf.is_empty());
+}
+
+#[test]
+fn unstuff_into_error_preserves_preexisting_data() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xCC);
+    let result = unstuff_into(&[0x01, 0xF3], &mut buf); // truncated escape
+    assert!(result.is_err());
+    // Buffer may contain partial output up to the error — that's fine,
+    // callers should discard on error. But the pre-existing byte is intact.
+    assert_eq!(buf[0], 0xCC);
+}
+
+#[test]
+fn unstuff_into_all_escapes() {
+    let mut buf = FrameBuf::new();
+    unstuff_into(&[0xF3, 0x00, 0xF3, 0x01, 0xF3, 0x02, 0xF3, 0x03], &mut buf).unwrap();
+    assert_eq!(&buf[..], &[0xF0, 0xF1, 0xF2, 0xF3]);
 }
 
 // -- error cases ------------------------------------------------------
@@ -389,6 +448,41 @@ fn frame_huge_input_fast_reject() {
     );
 }
 
+// -- build_standard_frame_into ----------------------------------------
+
+#[test]
+fn frame_into_appends_to_existing_buffer() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xFF); // pre-existing byte
+    build_standard_frame_into(&[0x91], &mut buf).unwrap();
+    // 0xFF + [0xF1, 0x91, 0x91, 0xF2]
+    assert_eq!(&buf[..], &[0xFF, 0xF1, 0x91, 0x91, 0xF2]);
+}
+
+#[test]
+fn frame_into_empty_contents() {
+    let mut buf = FrameBuf::new();
+    build_standard_frame_into(&[], &mut buf).unwrap();
+    assert_eq!(&buf[..], &[0xF1, 0x00, 0xF2]);
+}
+
+#[test]
+fn frame_into_too_large_leaves_buffer_unchanged() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xAA);
+    let payload = vec![0x01; 118];
+    let result = build_standard_frame_into(&payload, &mut buf);
+    assert!(result.is_err());
+    assert_eq!(&buf[..], &[0xAA]); // buffer unchanged
+}
+
+#[test]
+fn frame_into_stuffed_contents() {
+    let mut buf = FrameBuf::new();
+    build_standard_frame_into(&[0xF1], &mut buf).unwrap();
+    assert_eq!(&buf[..], &[0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]);
+}
+
 // -- parse_standard_frame ---------------------------------------------
 
 #[test]
@@ -443,8 +537,7 @@ fn parse_empty_contents_with_checksum() {
     // Empty contents → checksum = 0x00.
     // Wire: [0xF1, 0x00, 0xF2]
     let contents = parse_standard_frame(&[0xF1, 0x00, 0xF2]).unwrap();
-    let empty: Vec<u8> = vec![];
-    assert_eq!(contents, empty);
+    assert!(contents.is_empty());
 }
 
 #[test]
@@ -452,14 +545,14 @@ fn parse_single_command() {
     // GETSERIAL 0x91.  Checksum = 0x91.
     // Wire: [0xF1, 0x91, 0x91, 0xF2]
     let contents = parse_standard_frame(&[0xF1, 0x91, 0x91, 0xF2]).unwrap();
-    assert_eq!(contents, vec![0x91]);
+    assert_eq!(&contents[..], &[0x91]);
 }
 
 #[test]
 fn parse_multi_byte_payload() {
     // Payload [0x01, 0x02], checksum = 0x03.
     let contents = parse_standard_frame(&[0xF1, 0x01, 0x02, 0x03, 0xF2]).unwrap();
-    assert_eq!(contents, vec![0x01, 0x02]);
+    assert_eq!(&contents[..], &[0x01, 0x02]);
 }
 
 #[test]
@@ -468,7 +561,7 @@ fn parse_stuffed_contents() {
     // Checksum = 0xF1 → stuffed to [0xF3, 0x01].
     // Wire: [0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]
     let contents = parse_standard_frame(&[0xF1, 0xF3, 0x01, 0xF3, 0x01, 0xF2]).unwrap();
-    assert_eq!(contents, vec![0xF1]);
+    assert_eq!(&contents[..], &[0xF1]);
 }
 
 #[test]
@@ -529,7 +622,7 @@ fn roundtrip_build_then_parse() {
     let original = vec![0x91]; // GETSERIAL
     let frame = build_standard_frame(&original).unwrap();
     let recovered = parse_standard_frame(&frame).unwrap();
-    assert_eq!(recovered, original);
+    assert_eq!(&recovered[..], &original[..]);
 }
 
 #[test]
@@ -537,7 +630,7 @@ fn roundtrip_with_reserved_bytes() {
     let original = vec![0xF0, 0xF1, 0xF2, 0xF3, 0x42];
     let frame = build_standard_frame(&original).unwrap();
     let recovered = parse_standard_frame(&frame).unwrap();
-    assert_eq!(recovered, original);
+    assert_eq!(&recovered[..], &original[..]);
 }
 
 #[test]
@@ -545,7 +638,7 @@ fn roundtrip_multi_byte() {
     let original = vec![0x01, 0x02, 0x03, 0x04, 0x05];
     let frame = build_standard_frame(&original).unwrap();
     let recovered = parse_standard_frame(&frame).unwrap();
-    assert_eq!(recovered, original);
+    assert_eq!(&recovered[..], &original[..]);
 }
 
 #[test]
@@ -553,7 +646,7 @@ fn roundtrip_empty_contents() {
     let original: Vec<u8> = vec![];
     let frame = build_standard_frame(&original).unwrap();
     let recovered = parse_standard_frame(&frame).unwrap();
-    assert_eq!(recovered, original);
+    assert_eq!(&recovered[..], &original[..]);
 }
 
 #[test]
@@ -563,7 +656,11 @@ fn roundtrip_all_single_bytes_via_frame() {
         let original = vec![b];
         let frame = build_standard_frame(&original).unwrap();
         let recovered = parse_standard_frame(&frame).unwrap();
-        assert_eq!(recovered, original, "roundtrip failed for byte 0x{b:02X}");
+        assert_eq!(
+            &recovered[..],
+            &original[..],
+            "roundtrip failed for byte 0x{b:02X}"
+        );
     }
 }
 
@@ -690,6 +787,36 @@ fn ext_build_fast_reject() {
     assert!(matches!(result, Err(FrameError::TooLarge { .. })));
 }
 
+// -- build_extended_frame_into ----------------------------------------
+
+#[test]
+fn ext_frame_into_appends_to_existing_buffer() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xFF);
+    build_extended_frame_into(0x00, 0x01, &[0x42], &mut buf).unwrap();
+    // 0xFF + [0xF0, 0x00, 0x01, 0x42, 0x42, 0xF2]
+    assert_eq!(&buf[..], &[0xFF, 0xF0, 0x00, 0x01, 0x42, 0x42, 0xF2]);
+}
+
+#[test]
+fn ext_frame_into_too_large_leaves_buffer_unchanged() {
+    let mut buf = FrameBuf::new();
+    buf.push(0xBB);
+    let payload = vec![0x01; 118];
+    let result = build_extended_frame_into(0x00, 0x01, &payload, &mut buf);
+    assert!(result.is_err());
+    assert_eq!(&buf[..], &[0xBB]);
+}
+
+#[test]
+fn ext_frame_into_addresses_need_stuffing() {
+    let mut buf = FrameBuf::new();
+    build_extended_frame_into(0xF0, 0xF1, &[0x42], &mut buf).unwrap();
+    // Addresses stuffed: dst=0xF0→[0xF3,0x00], src=0xF1→[0xF3,0x01]
+    // Contents: 0x42 (no stuffing), checksum=0x42 (no stuffing)
+    assert_eq!(&buf[..], &[0xF0, 0xF3, 0x00, 0xF3, 0x01, 0x42, 0x42, 0xF2]);
+}
+
 // -- extended frame: parse_extended_frame -----------------------------
 
 #[test]
@@ -698,7 +825,7 @@ fn ext_parse_simple() {
     let parsed = parse_extended_frame(&frame).unwrap();
     assert_eq!(parsed.destination, 0xFD);
     assert_eq!(parsed.source, 0x00);
-    assert_eq!(parsed.contents, vec![0x91]);
+    assert_eq!(&parsed.contents[..], &[0x91]);
 }
 
 #[test]
@@ -707,8 +834,7 @@ fn ext_parse_empty_contents() {
     let parsed = parse_extended_frame(&frame).unwrap();
     assert_eq!(parsed.destination, 0xFD);
     assert_eq!(parsed.source, 0x00);
-    let empty: Vec<u8> = vec![];
-    assert_eq!(parsed.contents, empty);
+    assert!(parsed.contents.is_empty());
 }
 
 #[test]
@@ -717,7 +843,7 @@ fn ext_parse_stuffed_addresses() {
     let frame = vec![0xF0, 0x00, 0xF3, 0x01, 0x91, 0x91, 0xF2];
     let parsed = parse_extended_frame(&frame).unwrap();
     assert_eq!(parsed.source, 0xF1);
-    assert_eq!(parsed.contents, vec![0x91]);
+    assert_eq!(&parsed.contents[..], &[0x91]);
 }
 
 #[test]
@@ -725,7 +851,7 @@ fn ext_parse_stuffed_contents() {
     // contents=[0xF0], checksum=0xF0 — both stuffed on wire.
     let frame = vec![0xF0, 0x00, 0x00, 0xF3, 0x00, 0xF3, 0x00, 0xF2];
     let parsed = parse_extended_frame(&frame).unwrap();
-    assert_eq!(parsed.contents, vec![0xF0]);
+    assert_eq!(&parsed.contents[..], &[0xF0]);
 }
 
 #[test]
@@ -811,7 +937,7 @@ fn ext_roundtrip_simple() {
     let parsed = parse_extended_frame(&ef).unwrap();
     assert_eq!(parsed.destination, 0xFD);
     assert_eq!(parsed.source, 0x00);
-    assert_eq!(parsed.contents, vec![0x91]);
+    assert_eq!(&parsed.contents[..], &[0x91]);
 }
 
 #[test]
@@ -819,7 +945,7 @@ fn ext_roundtrip_reserved_bytes_in_contents() {
     let original = vec![0xF0, 0xF1, 0xF2, 0xF3, 0x42];
     let frame = build_extended_frame(0xFD, 0x00, &original).unwrap();
     let parsed = parse_extended_frame(&frame).unwrap();
-    assert_eq!(parsed.contents, original);
+    assert_eq!(&parsed.contents[..], &original[..]);
 }
 
 #[test]
@@ -829,7 +955,7 @@ fn ext_roundtrip_reserved_addresses() {
     let parsed = parse_extended_frame(&frame).unwrap();
     assert_eq!(parsed.destination, 0xF0);
     assert_eq!(parsed.source, 0xF3);
-    assert_eq!(parsed.contents, vec![0x42]);
+    assert_eq!(&parsed.contents[..], &[0x42]);
 }
 
 #[test]
@@ -838,8 +964,7 @@ fn ext_roundtrip_empty_contents() {
     let parsed = parse_extended_frame(&frame).unwrap();
     assert_eq!(parsed.destination, 0x00);
     assert_eq!(parsed.source, 0x00);
-    let empty: Vec<u8> = vec![];
-    assert_eq!(parsed.contents, empty);
+    assert!(parsed.contents.is_empty());
 }
 
 #[test]
@@ -850,7 +975,8 @@ fn ext_roundtrip_all_single_bytes() {
         let frame = build_extended_frame(ADDR_DEFAULT_SECONDARY, ADDR_PC_HOST, &original).unwrap();
         let parsed = parse_extended_frame(&frame).unwrap();
         assert_eq!(
-            parsed.contents, original,
+            &parsed.contents[..],
+            &original[..],
             "round-trip failed for byte 0x{b:02X}"
         );
     }

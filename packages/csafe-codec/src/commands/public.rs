@@ -1,4 +1,5 @@
 use super::proprietary::*;
+use crate::framing::FrameBuf;
 
 /// A public CSAFE command that can be placed in a standard frame.
 ///
@@ -220,4 +221,100 @@ impl Command {
     pub fn is_short(&self) -> bool {
         self.id() & 0x80 != 0
     }
+
+    /// Encode this command into raw wire bytes (without framing or byte-stuffing).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = FrameBuf::new();
+        self.encode_into(&mut buf);
+        buf.into_vec()
+    }
+
+    pub fn encode_into(&self, buf: &mut FrameBuf) {
+        if self.is_short() {
+            buf.push(self.id());
+            return;
+        }
+
+        match self {
+            Self::AutoUpload { configuration } => {
+                buf.extend_from_slice(&[0x01, 0x01, *configuration])
+            }
+            Self::IdDigits { count } => buf.extend_from_slice(&[0x10, 0x01, *count]),
+            Self::SetTime {
+                hour,
+                minute,
+                second,
+            } => buf.extend_from_slice(&[0x11, 0x03, *hour, *minute, *second]),
+            Self::SetDate { year, month, day } => {
+                buf.extend_from_slice(&[0x12, 0x03, *year, *month, *day])
+            }
+            Self::SetTimeout { timeout } => buf.extend_from_slice(&[0x13, 0x01, *timeout]),
+            Self::SetTWork {
+                hours,
+                minutes,
+                seconds,
+            } => buf.extend_from_slice(&[0x20, 0x03, *hours, *minutes, *seconds]),
+            Self::SetHorizontal {
+                distance_lsb,
+                distance_msb,
+                units,
+            } => buf.extend_from_slice(&[0x21, 0x03, *distance_lsb, *distance_msb, *units]),
+            Self::SetCalories {
+                calories_lsb,
+                calories_msb,
+            } => buf.extend_from_slice(&[0x23, 0x02, *calories_lsb, *calories_msb]),
+            Self::SetProgram { program, unused } => {
+                buf.extend_from_slice(&[0x24, 0x02, *program, *unused])
+            }
+            Self::SetPower {
+                watts_lsb,
+                watts_msb,
+                units,
+            } => buf.extend_from_slice(&[0x34, 0x03, *watts_lsb, *watts_msb, *units]),
+            Self::GetCaps { capability_code } => {
+                buf.extend_from_slice(&[0x70, 0x01, *capability_code])
+            }
+
+            Self::SetUserCfg1 { commands } => {
+                encode_wrapper_into(0x1A, commands, SetUserCfg1Command::encode_into, buf)
+            }
+            Self::SetPmCfg { commands } => {
+                encode_wrapper_into(0x76, commands, SetPmCfgCommand::encode_into, buf)
+            }
+            Self::SetPmData { commands } => {
+                encode_wrapper_into(0x77, commands, SetPmDataCommand::encode_into, buf)
+            }
+            Self::GetPmCfg { commands } => {
+                encode_wrapper_into(0x7E, commands, GetPmCfgCommand::encode_into, buf)
+            }
+            Self::GetPmData { commands } => {
+                encode_wrapper_into(0x7F, commands, GetPmDataCommand::encode_into, buf)
+            }
+
+            // Short commands handled by early return above;
+            // `#[non_exhaustive]` requires a wildcard arm.
+            _ => unreachable!("short commands handled above"),
+        }
+    }
+}
+
+fn encode_wrapper_into<T>(
+    opcode: u8,
+    cmds: &[T],
+    encode_fn: fn(&T, &mut FrameBuf),
+    buf: &mut FrameBuf,
+) {
+    buf.push(opcode);
+    let len_idx = buf.len();
+    buf.push(0);
+    let payload_start = buf.len();
+    for cmd in cmds {
+        encode_fn(cmd, buf);
+    }
+    let payload_len = buf.len() - payload_start;
+    assert!(
+        payload_len <= u8::MAX as usize,
+        "CSAFE wrapper payload too long: {payload_len} bytes (max 255)"
+    );
+    buf[len_idx] = payload_len as u8;
 }

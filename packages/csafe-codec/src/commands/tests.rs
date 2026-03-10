@@ -1,4 +1,5 @@
 use super::*;
+use crate::framing::FrameBuf;
 
 // -- WorkoutType ------------------------------------------------------
 
@@ -950,4 +951,57 @@ fn command_wrapper_typed() {
         ],
     };
     assert_eq!(cmd.id(), 0x1A);
+}
+
+// -- encode_into / encode_commands_into --------------------------------
+
+#[test]
+fn encode_into_short_command() {
+    let mut buf = FrameBuf::new();
+    Command::GetStatus.encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x80]);
+}
+
+#[test]
+fn encode_into_long_command() {
+    let mut buf = FrameBuf::new();
+    Command::SetTime {
+        hour: 14,
+        minute: 30,
+        second: 0,
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x11, 0x03, 14, 30, 0]);
+}
+
+#[test]
+fn encode_into_wrapper_command() {
+    let mut buf = FrameBuf::new();
+    Command::GetPmCfg {
+        commands: vec![GetPmCfgCommand::FwVersion, GetPmCfgCommand::HwVersion],
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x7E, 0x02, 0x80, 0x81]);
+}
+
+#[test]
+fn encode_commands_into_multiple() {
+    let mut buf = FrameBuf::new();
+    let cmds = vec![
+        Command::GetStatus,
+        Command::GoIdle,
+        Command::GetCaps { capability_code: 1 },
+    ];
+    encode_commands_into(&cmds, &mut buf);
+    assert_eq!(&buf[..], &[0x80, 0x82, 0x70, 0x01, 1]);
+}
+
+#[test]
+fn encode_into_proprietary_sub_command() {
+    let mut buf = FrameBuf::new();
+    GetPmCfgCommand::ErgNumber {
+        hw_address: 0x01020304,
+    }
+    .encode_into(&mut buf);
+    assert_eq!(&buf[..], &[0x50, 4, 0x04, 0x03, 0x02, 0x01]);
 }

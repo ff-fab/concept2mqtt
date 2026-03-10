@@ -1,5 +1,14 @@
+use smallvec::SmallVec;
+
+/// Stack-allocated byte buffer sized for a full CSAFE frame (120 bytes max,
+/// rounded up to the next power of two).
+pub type FrameBuf = SmallVec<[u8; 128]>;
+
+/// Stack-allocated byte buffer sized for stuffed output (worst case 2× input).
+pub type StuffBuf = SmallVec<[u8; 256]>;
+
 // CSAFE frame-level primitives: byte stuffing, checksum, frame building,
-// and frame parsing.
+// and frame parser.
 //
 // Byte stuffing (protocol.yaml §byte_stuffing, Table 6) ensures the four
 // flag bytes 0xF0–0xF3 never appear inside frame contents or the checksum.
@@ -69,29 +78,51 @@ impl std::fmt::Display for StuffingError {
 
 // ── Public API ──────────────────────────────────────────────────────────
 
+/// Stuff reserved bytes and **append** the result to `buf`.
+///
+/// This is the zero-allocation core used by [`stuff_bytes`].  Callers
+/// reuse a single buffer across multiple stuffing operations (e.g. frame
+/// building) to avoid intermediate heap allocations.
+pub fn stuff_into(data: &[u8], buf: &mut StuffBuf) {
+    buf.reserve(data.len());
+    for &b in data {
+        if STUFF_RANGE.contains(&b) {
+            buf.push(STUFF_MARKER);
+            buf.push(b - EXTENDED_START);
+        } else {
+            buf.push(b);
+        }
+    }
+}
+
+/// Stuff a single byte directly into `buf`.  Used for addresses and
+/// checksums where a full `stuff_into` call would be wasteful.
+fn stuff_byte_into(b: u8, buf: &mut FrameBuf) {
+    if STUFF_RANGE.contains(&b) {
+        buf.push(STUFF_MARKER);
+        buf.push(b - EXTENDED_START);
+    } else {
+        buf.push(b);
+    }
+}
+
 /// Replace every byte in the reserved range [0xF0, 0xF3] with its
 /// two-byte escape sequence `[0xF3, byte − 0xF0]`.
 pub fn stuff_bytes(data: &[u8]) -> Vec<u8> {
-    // Worst case: every byte is stuffed → 2× input length.
-    let mut out = Vec::with_capacity(data.len().saturating_mul(2));
-    for &b in data {
-        if STUFF_RANGE.contains(&b) {
-            out.push(STUFF_MARKER);
-            out.push(b - EXTENDED_START);
-        } else {
-            out.push(b);
-        }
-    }
-    out
+    let mut buf = StuffBuf::new();
+    stuff_into(data, &mut buf);
+    buf.into_vec()
 }
 
-/// Reverse byte stuffing: every `[0xF3, offset]` pair is replaced by
-/// `0xF0 + offset`.
+/// Reverse byte stuffing and **append** the result to `buf`.
 ///
-/// Returns an error if the stream contains a truncated escape (0xF3 at
-/// end-of-input) or an offset outside 0x00–0x03.
-pub fn unstuff_bytes(data: &[u8]) -> Result<Vec<u8>, StuffingError> {
-    let mut out = Vec::with_capacity(data.len());
+/// This is the zero-allocation core used by [`unstuff_bytes`].
+///
+/// # Errors
+///
+/// Returns [`StuffingError`] for truncated escapes or invalid offsets.
+pub fn unstuff_into(data: &[u8], buf: &mut FrameBuf) -> Result<(), StuffingError> {
+    buf.reserve(data.len());
     let mut i = 0;
     while i < data.len() {
         if data[i] == STUFF_MARKER {
@@ -104,14 +135,25 @@ pub fn unstuff_bytes(data: &[u8]) -> Result<Vec<u8>, StuffingError> {
                     offset,
                 });
             }
-            out.push(EXTENDED_START + offset);
+            buf.push(EXTENDED_START + offset);
             i += 2;
         } else {
-            out.push(data[i]);
+            buf.push(data[i]);
             i += 1;
         }
     }
-    Ok(out)
+    Ok(())
+}
+
+/// Reverse byte stuffing: every `[0xF3, offset]` pair is replaced by
+/// `0xF0 + offset`.
+///
+/// Returns an error if the stream contains a truncated escape (0xF3 at
+/// end-of-input) or an offset outside 0x00–0x03.
+pub fn unstuff_bytes(data: &[u8]) -> Result<Vec<u8>, StuffingError> {
+    let mut buf = FrameBuf::new();
+    unstuff_into(data, &mut buf)?;
+    Ok(buf.into_vec())
 }
 
 // ── Checksum ────────────────────────────────────────────────────────────
@@ -164,6 +206,49 @@ impl std::fmt::Display for FrameError {
     }
 }
 
+/// Build a standard CSAFE frame directly into `buf`, avoiding intermediate
+/// heap allocations.
+///
+/// Appends `[0xF1] [stuffed contents] [stuffed checksum] [0xF2]` to `buf`.
+///
+/// # Errors
+///
+/// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
+/// the 120-byte protocol limit.  On error, `buf` is left unchanged.
+pub fn build_standard_frame_into(contents: &[u8], buf: &mut FrameBuf) -> Result<(), FrameError> {
+    if contents.len() > MAX_FRAME_SIZE {
+        return Err(FrameError::TooLarge {
+            actual: FRAME_ENVELOPE + contents.len() + 1,
+        });
+    }
+
+    let start_len = buf.len();
+
+    buf.push(STANDARD_START);
+
+    for &b in contents {
+        if STUFF_RANGE.contains(&b) {
+            buf.push(STUFF_MARKER);
+            buf.push(b - EXTENDED_START);
+        } else {
+            buf.push(b);
+        }
+    }
+
+    let checksum = compute_checksum(contents);
+    stuff_byte_into(checksum, buf);
+
+    buf.push(STOP);
+
+    let frame_len = buf.len() - start_len;
+    if frame_len > MAX_FRAME_SIZE {
+        buf.truncate(start_len);
+        return Err(FrameError::TooLarge { actual: frame_len });
+    }
+
+    Ok(())
+}
+
 /// Build a standard CSAFE frame from raw (unstuffed) `contents`.
 ///
 /// Returns the complete wire-format frame:
@@ -174,30 +259,9 @@ impl std::fmt::Display for FrameError {
 /// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
 /// the 120-byte protocol limit.
 pub fn build_standard_frame(contents: &[u8]) -> Result<Vec<u8>, FrameError> {
-    // Fast reject: raw contents alone exceed the frame limit, so the
-    // stuffed frame (which is >= contents) certainly will too.  Avoids
-    // an unnecessary O(n) allocation for oversized inputs.
-    if contents.len() > MAX_FRAME_SIZE {
-        return Err(FrameError::TooLarge {
-            actual: FRAME_ENVELOPE + contents.len() + 1,
-        });
-    }
-
-    let stuffed_contents = stuff_bytes(contents);
-    let checksum = compute_checksum(contents);
-    let stuffed_checksum = stuff_bytes(&[checksum]);
-
-    let total = FRAME_ENVELOPE + stuffed_contents.len() + stuffed_checksum.len();
-    if total > MAX_FRAME_SIZE {
-        return Err(FrameError::TooLarge { actual: total });
-    }
-
-    let mut frame = Vec::with_capacity(total);
-    frame.push(STANDARD_START);
-    frame.extend_from_slice(&stuffed_contents);
-    frame.extend_from_slice(&stuffed_checksum);
-    frame.push(STOP);
-    Ok(frame)
+    let mut buf = FrameBuf::new();
+    build_standard_frame_into(contents, &mut buf)?;
+    Ok(buf.into_vec())
 }
 
 // ── Frame parsing ───────────────────────────────────────────────────────
@@ -281,9 +345,7 @@ impl From<StuffingError> for ParseError {
 ///
 /// Returns [`ParseError`] for missing flags, empty frames, unstuffing
 /// failures, or checksum mismatches.
-pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
-    // At minimum we need: start(1) + checksum(1..2 stuffed) + stop(1) = 3 bytes.
-    // But we check structurally instead.
+pub fn parse_standard_frame(frame: &[u8]) -> Result<FrameBuf, ParseError> {
     if frame.is_empty() {
         return Err(ParseError::EmptyFrame);
     }
@@ -307,19 +369,16 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
         return Err(ParseError::MissingStopFlag { actual: stop });
     }
 
-    // Body sits between start and stop flags.
     let stuffed_body = &frame[1..frame.len() - 1];
+    let mut unstuffed = FrameBuf::new();
+    unstuff_into(stuffed_body, &mut unstuffed)?;
 
-    // Unstuff the body (contents + checksum together).
-    let unstuffed = unstuff_bytes(stuffed_body)?; // ? uses From<StuffingError>
-
-    // The last unstuffed byte is the checksum; everything before it is contents.
     if unstuffed.is_empty() {
         return Err(ParseError::EmptyFrame);
     }
-    let (contents, checksum_slice) = unstuffed.split_at(unstuffed.len() - 1);
-    let frame_checksum = checksum_slice[0];
 
+    let frame_checksum = *unstuffed.last().unwrap();
+    let contents = &unstuffed[..unstuffed.len() - 1];
     let computed = compute_checksum(contents);
     if computed != frame_checksum {
         return Err(ParseError::BadChecksum {
@@ -328,10 +387,62 @@ pub fn parse_standard_frame(frame: &[u8]) -> Result<Vec<u8>, ParseError> {
         });
     }
 
-    Ok(contents.to_vec())
+    unstuffed.pop(); // remove checksum byte
+    Ok(unstuffed)
 }
 
 // ── Extended frame building ─────────────────────────────────────────────
+
+/// Build an extended CSAFE frame directly into `buf`, avoiding intermediate
+/// heap allocations.
+///
+/// Appends `[0xF0] [stuffed dst] [stuffed src] [stuffed contents] [stuffed checksum] [0xF2]`
+/// to `buf`.
+///
+/// # Errors
+///
+/// Returns [`FrameError::TooLarge`] if the resulting frame would exceed
+/// the 120-byte protocol limit.  On error, `buf` is left unchanged.
+pub fn build_extended_frame_into(
+    destination: u8,
+    source: u8,
+    contents: &[u8],
+    buf: &mut FrameBuf,
+) -> Result<(), FrameError> {
+    if contents.len() > MAX_FRAME_SIZE {
+        return Err(FrameError::TooLarge {
+            actual: FRAME_ENVELOPE + contents.len() + 3,
+        });
+    }
+
+    let start_len = buf.len();
+
+    buf.push(EXTENDED_START);
+    stuff_byte_into(destination, buf);
+    stuff_byte_into(source, buf);
+
+    for &b in contents {
+        if STUFF_RANGE.contains(&b) {
+            buf.push(STUFF_MARKER);
+            buf.push(b - EXTENDED_START);
+        } else {
+            buf.push(b);
+        }
+    }
+
+    let checksum = compute_checksum(contents);
+    stuff_byte_into(checksum, buf);
+
+    buf.push(STOP);
+
+    let frame_len = buf.len() - start_len;
+    if frame_len > MAX_FRAME_SIZE {
+        buf.truncate(start_len);
+        return Err(FrameError::TooLarge { actual: frame_len });
+    }
+
+    Ok(())
+}
 
 /// Build an extended CSAFE frame from raw (unstuffed) `contents` with
 /// destination and source addresses.
@@ -351,37 +462,9 @@ pub fn build_extended_frame(
     source: u8,
     contents: &[u8],
 ) -> Result<Vec<u8>, FrameError> {
-    // Fast reject: if raw contents alone exceed the limit, the stuffed
-    // frame (which is >= raw) certainly will too.
-    if contents.len() > MAX_FRAME_SIZE {
-        return Err(FrameError::TooLarge {
-            actual: FRAME_ENVELOPE + contents.len() + 3, // rough lower bound
-        });
-    }
-
-    let stuffed_dst = stuff_bytes(&[destination]);
-    let stuffed_src = stuff_bytes(&[source]);
-    let stuffed_contents = stuff_bytes(contents);
-    let checksum = compute_checksum(contents);
-    let stuffed_checksum = stuff_bytes(&[checksum]);
-
-    let total = FRAME_ENVELOPE
-        + stuffed_dst.len()
-        + stuffed_src.len()
-        + stuffed_contents.len()
-        + stuffed_checksum.len();
-    if total > MAX_FRAME_SIZE {
-        return Err(FrameError::TooLarge { actual: total });
-    }
-
-    let mut frame = Vec::with_capacity(total);
-    frame.push(EXTENDED_START);
-    frame.extend_from_slice(&stuffed_dst);
-    frame.extend_from_slice(&stuffed_src);
-    frame.extend_from_slice(&stuffed_contents);
-    frame.extend_from_slice(&stuffed_checksum);
-    frame.push(STOP);
-    Ok(frame)
+    let mut buf = FrameBuf::new();
+    build_extended_frame_into(destination, source, contents, &mut buf)?;
+    Ok(buf.into_vec())
 }
 
 // ── Extended frame parsing ──────────────────────────────────────────────
@@ -394,7 +477,7 @@ pub struct ExtendedFrame {
     /// Source address (unstuffed).
     pub source: u8,
     /// Raw frame contents (unstuffed, checksum removed).
-    pub contents: Vec<u8>,
+    pub contents: FrameBuf,
 }
 
 /// Parse an extended CSAFE frame from wire bytes.
@@ -438,7 +521,8 @@ pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
     }
 
     let stuffed_body = &frame[1..frame.len() - 1];
-    let unstuffed = unstuff_bytes(stuffed_body)?;
+    let mut unstuffed = FrameBuf::new();
+    unstuff_into(stuffed_body, &mut unstuffed)?;
 
     // Need at least: dst(1) + src(1) + checksum(1) = 3 bytes.
     if unstuffed.len() < 3 {
@@ -468,7 +552,7 @@ pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
     Ok(ExtendedFrame {
         destination,
         source,
-        contents: contents.to_vec(),
+        contents: FrameBuf::from_slice(contents),
     })
 }
 
@@ -478,7 +562,7 @@ pub fn parse_extended_frame(frame: &[u8]) -> Result<ExtendedFrame, ParseError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
     /// A standard frame containing raw contents.
-    Standard(Vec<u8>),
+    Standard(FrameBuf),
     /// An extended frame with addressing and raw contents.
     Extended(ExtendedFrame),
 }

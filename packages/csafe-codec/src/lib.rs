@@ -87,6 +87,7 @@ fn py_build_standard_frame(contents: &[u8]) -> PyResult<Vec<u8>> {
 #[pyfunction(name = "parse_standard_frame")]
 fn py_parse_standard_frame(frame: &[u8]) -> PyResult<Vec<u8>> {
     framing::parse_standard_frame(frame)
+        .map(|buf| buf.into_vec())
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
@@ -107,7 +108,7 @@ fn py_build_extended_frame(destination: u8, source: u8, contents: &[u8]) -> PyRe
 fn py_parse_extended_frame(frame: &[u8]) -> PyResult<(u8, u8, Vec<u8>)> {
     let ef = framing::parse_extended_frame(frame)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-    Ok((ef.destination, ef.source, ef.contents))
+    Ok((ef.destination, ef.source, ef.contents.into_vec()))
 }
 
 /// Parse a CSAFE frame, auto-detecting standard vs extended by the start byte.

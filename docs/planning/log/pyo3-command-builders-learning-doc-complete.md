@@ -7,7 +7,7 @@ methods, `macro_rules!`, raw identifiers, path aliasing, Vec conversion across
 FFI, and the full Python-to-wire pipeline.
 
 **Files created/changed:**
-- `docs/learning/09-pyo3-command-classes-and-macros.md`
+- `docs/learning/09-pyo3-command-classes-and-macros.md` (local-only, gitignored)
 
 **Functions created/changed:**
 - N/A (documentation only)

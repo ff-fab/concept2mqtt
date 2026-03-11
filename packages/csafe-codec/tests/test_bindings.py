@@ -560,3 +560,695 @@ class TestCommandIdConstants:
     )
     def test_constant_value(self, name: str, expected: int) -> None:
         assert getattr(csafe_codec, name) == expected
+
+
+# =============================================================================
+# GetPmCfgCommand — factory methods and encoding
+# =============================================================================
+
+
+class TestGetPmCfgCommandFactories:
+    """GetPmCfgCommand factory methods return correct sub-commands.
+
+    Test Techniques Used:
+    - Specification-based Testing: factory method names and IDs match CSAFE spec
+    - Equivalence Partitioning: short commands (unit) vs long commands (struct)
+    """
+
+    @pytest.mark.parametrize(
+        ("method", "expected_id"),
+        [
+            ("fw_version", 0x80),
+            ("hw_version", 0x81),
+            ("hw_address", 0x82),
+            ("tick_timebase", 0x83),
+            ("hrm", 0x84),
+            ("workout_type", 0x89),
+            ("workout_state", 0x8D),
+            ("rowing_state", 0x93),
+            ("battery_level_percent", 0x97),
+            ("workout_duration", 0xE8),
+            ("flywheel_speed", 0xEC),
+            ("erg_machine_type", 0xED),
+        ],
+    )
+    def test_short_command_id(self, method: str, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.GetPmCfgCommand, method)()
+        assert cmd.id() == expected_id
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("erg_number", {"hw_address": 0}, 0x50),
+            ("erg_number_request", {"logical_erg_number": 1}, 0x51),
+            ("user_id_string", {"user_number": 0}, 0x52),
+            ("user_id", {"user_number": 0}, 0x54),
+            ("user_profile", {"user_number": 0}, 0x55),
+            ("hr_belt_info", {"user_number": 0}, 0x56),
+            ("extended_hr_belt_info", {"user_number": 0}, 0x57),
+            (
+                "current_log_structure",
+                {"structure_id": 0, "split_interval_number": 0},
+                0x58,
+            ),
+        ],
+    )
+    def test_struct_command_id(
+        self, method: str, kwargs: dict, expected_id: int
+    ) -> None:
+        cmd = getattr(csafe_codec.GetPmCfgCommand, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+    def test_returns_correct_type(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.fw_version()
+        assert type(cmd).__name__ == "GetPmCfgCommand"
+
+
+class TestGetPmCfgCommandEncoding:
+    """GetPmCfgCommand encoding produces correct wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches known Rust encoding
+    - Specification-based Testing: wire format matches CSAFE protocol
+    """
+
+    def test_short_command_encodes_single_byte(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.fw_version()
+        assert cmd.encode() == bytes([0x80])
+
+    def test_short_command_returns_bytes(self) -> None:
+        assert isinstance(csafe_codec.GetPmCfgCommand.fw_version().encode(), bytes)
+
+    def test_erg_number_with_address(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.erg_number(hw_address=0x12345678)
+        assert cmd.encode() == bytes([0x50, 4, 0x78, 0x56, 0x34, 0x12])
+
+    def test_erg_number_request(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.erg_number_request(logical_erg_number=5)
+        assert cmd.encode() == bytes([0x51, 1, 5])
+
+    def test_current_log_structure(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.current_log_structure(
+            structure_id=2,
+            split_interval_number=3,
+        )
+        assert cmd.encode() == bytes([0x58, 2, 2, 3])
+
+
+# =============================================================================
+# GetPmDataCommand — factory methods and encoding
+# =============================================================================
+
+
+class TestGetPmDataCommandFactories:
+    """GetPmDataCommand factory methods return correct sub-commands.
+
+    Test Techniques Used:
+    - Specification-based Testing: factory names and IDs from PM data spec
+    - Equivalence Partitioning: short (unit) vs long (struct) sub-commands
+    """
+
+    @pytest.mark.parametrize(
+        ("method", "expected_id"),
+        [
+            ("work_time", 0xA0),
+            ("work_distance", 0xA3),
+            ("stroke_500m_pace", 0xA8),
+            ("stroke_power", 0xA9),
+            ("stroke_rate", 0xB3),
+            ("avg_heart_rate", 0xB6),
+            ("drag_factor", 0xC1),
+            ("sync_data", 0xC4),
+            ("rest_time", 0xCF),
+        ],
+    )
+    def test_short_command_id(self, method: str, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.GetPmDataCommand, method)()
+        assert cmd.id() == expected_id
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("memory", {"device_type": 0, "start_address": 0, "block_length": 1}, 0x68),
+            ("log_card_memory", {"start_address": 0, "block_length": 1}, 0x69),
+            ("internal_log_memory", {"start_address": 0, "block_length": 1}, 0x6A),
+            ("force_plot_data", {"block_length": 32}, 0x6B),
+            ("heartbeat_data", {"block_length": 16}, 0x6C),
+            ("stroke_stats", {"unused": 0}, 0x6E),
+            ("diag_log_record_num", {"record_type": 1}, 0x70),
+        ],
+    )
+    def test_struct_command_id(
+        self, method: str, kwargs: dict, expected_id: int
+    ) -> None:
+        cmd = getattr(csafe_codec.GetPmDataCommand, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+
+class TestGetPmDataCommandEncoding:
+    """GetPmDataCommand encoding produces correct wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches Rust encoding
+    """
+
+    def test_short_command_encode(self) -> None:
+        assert csafe_codec.GetPmDataCommand.work_time().encode() == bytes([0xA0])
+
+    def test_memory_command(self) -> None:
+        cmd = csafe_codec.GetPmDataCommand.memory(
+            device_type=1,
+            start_address=0x100,
+            block_length=32,
+        )
+        expected = bytes([0x68, 6, 1]) + (0x100).to_bytes(4, "little") + bytes([32])
+        assert cmd.encode() == expected
+
+    def test_force_plot_data(self) -> None:
+        cmd = csafe_codec.GetPmDataCommand.force_plot_data(block_length=32)
+        assert cmd.encode() == bytes([0x6B, 1, 32])
+
+    def test_diag_log_record(self) -> None:
+        cmd = csafe_codec.GetPmDataCommand.diag_log_record(
+            record_type=2,
+            record_index=10,
+            record_offset_bytes=100,
+        )
+        expected = (
+            bytes([0x71, 5, 2])
+            + (10).to_bytes(2, "little")
+            + (100).to_bytes(2, "little")
+        )
+        assert cmd.encode() == expected
+
+
+# =============================================================================
+# SetPmCfgCommand — factory methods and encoding
+# =============================================================================
+
+
+class TestSetPmCfgCommandFactories:
+    """SetPmCfgCommand factory methods return correct sub-commands.
+
+    Test Techniques Used:
+    - Specification-based Testing: factory names and IDs from PM config spec
+    - Equivalence Partitioning: unit (reset_erg_number) vs struct commands
+    """
+
+    def test_reset_erg_number_is_short(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.reset_erg_number()
+        assert cmd.id() == 0xE1
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("workout_type", {"workout_type": 0}, 0x01),
+            ("workout_duration", {"duration_type": 0, "duration": 0}, 0x03),
+            ("rest_duration", {"duration": 0}, 0x04),
+            ("split_duration", {"duration_type": 0, "duration": 0}, 0x05),
+            ("target_pace_time", {"pace_time": 0}, 0x06),
+            ("race_type", {"race_type": 0}, 0x09),
+            ("erg_number", {"hw_address": 0, "erg_number": 0}, 0x10),
+            ("screen_state", {"screen_type": 0, "screen_value": 0}, 0x13),
+            ("configure_workout", {"programming_mode": 0}, 0x14),
+            ("interval_type", {"interval_type": 0}, 0x17),
+            (
+                "date_time",
+                {
+                    "hours": 0,
+                    "minutes": 0,
+                    "meridiem": 0,
+                    "month": 0,
+                    "day": 0,
+                    "year": 0,
+                },
+                0x22,
+            ),
+        ],
+    )
+    def test_struct_command_id(
+        self, method: str, kwargs: dict, expected_id: int
+    ) -> None:
+        cmd = getattr(csafe_codec.SetPmCfgCommand, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+
+class TestSetPmCfgCommandEncoding:
+    """SetPmCfgCommand encoding produces correct wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches Rust encoding
+    - Specification-based Testing: payload layout matches protocol
+    """
+
+    def test_reset_erg_number_single_byte(self) -> None:
+        assert csafe_codec.SetPmCfgCommand.reset_erg_number().encode() == bytes([0xE1])
+
+    def test_workout_type(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.workout_type(workout_type=5)
+        assert cmd.encode() == bytes([0x01, 1, 5])
+
+    def test_workout_duration(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.workout_duration(
+            duration_type=0x00,
+            duration=1200,
+        )
+        expected = bytes([0x03, 5, 0x00]) + (1200).to_bytes(4, "little")
+        assert cmd.encode() == expected
+
+    def test_rest_duration(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.rest_duration(duration=120)
+        expected = bytes([0x04, 2]) + (120).to_bytes(2, "little")
+        assert cmd.encode() == expected
+
+    def test_date_time(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.date_time(
+            hours=14,
+            minutes=30,
+            meridiem=0,
+            month=6,
+            day=15,
+            year=2025,
+        )
+        expected = bytes([0x22, 7, 14, 30, 0, 6, 15]) + (2025).to_bytes(2, "little")
+        assert cmd.encode() == expected
+
+    def test_erg_number(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.erg_number(
+            hw_address=0xAABBCCDD, erg_number=3
+        )
+        expected = bytes([0x10, 5]) + (0xAABBCCDD).to_bytes(4, "little") + bytes([3])
+        assert cmd.encode() == expected
+
+    def test_screen_state(self) -> None:
+        cmd = csafe_codec.SetPmCfgCommand.screen_state(screen_type=1, screen_value=2)
+        assert cmd.encode() == bytes([0x13, 2, 1, 2])
+
+
+# =============================================================================
+# SetPmDataCommand — factory methods and encoding
+# =============================================================================
+
+
+class TestSetPmDataCommandFactories:
+    """SetPmDataCommand factory methods return correct sub-commands.
+
+    Test Techniques Used:
+    - Specification-based Testing: factory names and IDs from PM data spec
+    - Equivalence Partitioning: short (sync) vs long (struct) sub-commands
+    """
+
+    @pytest.mark.parametrize(
+        ("method", "expected_id"),
+        [
+            ("sync_distance", 0xD0),
+            ("sync_stroke_pace", 0xD1),
+            ("sync_avg_heart_rate", 0xD2),
+            ("sync_time", 0xD3),
+            ("sync_race_tick_time", 0xD7),
+            ("sync_data_all", 0xD8),
+            ("sync_rowing_active_time", 0xD9),
+        ],
+    )
+    def test_short_command_id(self, method: str, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.SetPmDataCommand, method)()
+        assert cmd.id() == expected_id
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("race_participant", {"racer_id": 1, "racer_name": b"Bob"}, 0x32),
+            ("display_string", {"characters": b"Hi"}, 0x35),
+            ("led_backlight", {"state": 1, "intensity": 128}, 0x3B),
+            ("wireless_channel_config", {"channel_bitmask": 0xFF}, 0x3D),
+        ],
+    )
+    def test_struct_command_id(
+        self, method: str, kwargs: dict, expected_id: int
+    ) -> None:
+        cmd = getattr(csafe_codec.SetPmDataCommand, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+
+class TestSetPmDataCommandEncoding:
+    """SetPmDataCommand encoding produces correct wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches Rust encoding
+    """
+
+    def test_short_command_encode(self) -> None:
+        assert csafe_codec.SetPmDataCommand.sync_distance().encode() == bytes([0xD0])
+
+    def test_race_participant(self) -> None:
+        cmd = csafe_codec.SetPmDataCommand.race_participant(
+            racer_id=1,
+            racer_name=b"Bob",
+        )
+        assert cmd.encode() == bytes([0x32, 4, 1]) + b"Bob"
+
+    def test_display_string(self) -> None:
+        cmd = csafe_codec.SetPmDataCommand.display_string(characters=b"Hello")
+        assert cmd.encode() == bytes([0x35, 5]) + b"Hello"
+
+    def test_led_backlight(self) -> None:
+        cmd = csafe_codec.SetPmDataCommand.led_backlight(state=1, intensity=200)
+        assert cmd.encode() == bytes([0x3B, 2, 1, 200])
+
+    def test_wireless_channel_config(self) -> None:
+        cmd = csafe_codec.SetPmDataCommand.wireless_channel_config(
+            channel_bitmask=0xDEAD
+        )
+        expected = bytes([0x3D, 4]) + (0xDEAD).to_bytes(4, "little")
+        assert cmd.encode() == expected
+
+
+# =============================================================================
+# SetUserCfg1Command — factory methods and encoding
+# =============================================================================
+
+
+class TestSetUserCfg1CommandFactories:
+    """SetUserCfg1Command factory methods return correct sub-commands.
+
+    Test Techniques Used:
+    - Specification-based Testing: all 6 factory methods match restricted subset
+    """
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("workout_type", {"workout_type": 0}, 0x01),
+            ("workout_duration", {"duration_type": 0, "duration": 0}, 0x03),
+            ("split_duration", {"duration_type": 0, "duration": 0}, 0x05),
+            ("configure_workout", {"programming_mode": 0}, 0x14),
+            ("interval_type", {"interval_type": 0}, 0x17),
+            ("workout_interval_count", {"interval_count": 0}, 0x18),
+        ],
+    )
+    def test_command_id(self, method: str, kwargs: dict, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.SetUserCfg1Command, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+
+class TestSetUserCfg1CommandEncoding:
+    """SetUserCfg1Command encoding produces correct wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches Rust encoding
+    """
+
+    def test_workout_type(self) -> None:
+        cmd = csafe_codec.SetUserCfg1Command.workout_type(workout_type=2)
+        assert cmd.encode() == bytes([0x01, 1, 2])
+
+    def test_workout_duration(self) -> None:
+        cmd = csafe_codec.SetUserCfg1Command.workout_duration(
+            duration_type=0x80,
+            duration=5000,
+        )
+        expected = bytes([0x03, 5, 0x80]) + (5000).to_bytes(4, "little")
+        assert cmd.encode() == expected
+
+    def test_workout_interval_count(self) -> None:
+        cmd = csafe_codec.SetUserCfg1Command.workout_interval_count(interval_count=8)
+        assert cmd.encode() == bytes([0x18, 1, 8])
+
+
+# =============================================================================
+# Command (public) — factory methods
+# =============================================================================
+
+
+class TestCommandFactories:
+    """Command factory methods return correct command objects.
+
+    Test Techniques Used:
+    - Specification-based Testing: short/long/wrapper IDs match CSAFE spec
+    - Equivalence Partitioning: short, long (struct), and wrapper variants
+    """
+
+    @pytest.mark.parametrize(
+        ("method", "expected_id"),
+        [
+            ("get_status", 0x80),
+            ("reset", 0x81),
+            ("go_idle", 0x82),
+            ("go_have_id", 0x83),
+            ("go_in_use", 0x85),
+            ("go_finished", 0x86),
+            ("go_ready", 0x87),
+            ("bad_id", 0x88),
+            ("get_version", 0x91),
+            ("get_id", 0x92),
+            ("get_serial", 0x94),
+            ("get_calories", 0xA3),
+            ("get_heart_rate", 0xB0),
+            ("get_power", 0xB4),
+        ],
+    )
+    def test_short_command_id(self, method: str, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.Command, method)()
+        assert cmd.id() == expected_id
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs", "expected_id"),
+        [
+            ("auto_upload", {"configuration": 0}, 0x01),
+            ("id_digits", {"count": 4}, 0x10),
+            ("set_time", {"hour": 12, "minute": 0, "second": 0}, 0x11),
+            ("set_date", {"year": 25, "month": 3, "day": 11}, 0x12),
+            ("set_timeout", {"timeout": 30}, 0x13),
+            ("set_twork", {"hours": 0, "minutes": 30, "seconds": 0}, 0x20),
+            ("set_program", {"program": 0, "unused": 0}, 0x24),
+            ("get_caps", {"capability_code": 1}, 0x70),
+        ],
+    )
+    def test_long_command_id(self, method: str, kwargs: dict, expected_id: int) -> None:
+        cmd = getattr(csafe_codec.Command, method)(**kwargs)
+        assert cmd.id() == expected_id
+
+    @pytest.mark.parametrize(
+        ("method", "wrapper_id"),
+        [
+            ("set_user_cfg1", 0x1A),
+            ("set_pm_cfg", 0x76),
+            ("set_pm_data", 0x77),
+            ("get_pm_cfg", 0x7E),
+            ("get_pm_data", 0x7F),
+        ],
+    )
+    def test_wrapper_command_id(self, method: str, wrapper_id: int) -> None:
+        cmd = getattr(csafe_codec.Command, method)([])
+        assert cmd.id() == wrapper_id
+
+
+# =============================================================================
+# Command encoding
+# =============================================================================
+
+
+class TestCommandEncoding:
+    """Command encoding produces expected wire bytes.
+
+    Test Techniques Used:
+    - Round-trip Testing: Python encode matches known Rust test vectors
+    - Specification-based Testing: wire format matches CSAFE protocol
+    """
+
+    def test_short_command_single_byte(self) -> None:
+        assert csafe_codec.Command.get_status().encode() == bytes([0x80])
+
+    def test_auto_upload(self) -> None:
+        cmd = csafe_codec.Command.auto_upload(configuration=0x03)
+        assert cmd.encode() == bytes([0x01, 0x01, 0x03])
+
+    def test_set_time(self) -> None:
+        cmd = csafe_codec.Command.set_time(hour=14, minute=30, second=45)
+        assert cmd.encode() == bytes([0x11, 0x03, 14, 30, 45])
+
+    def test_set_date(self) -> None:
+        cmd = csafe_codec.Command.set_date(year=25, month=3, day=11)
+        assert cmd.encode() == bytes([0x12, 0x03, 25, 3, 11])
+
+    def test_set_calories(self) -> None:
+        cmd = csafe_codec.Command.set_calories(calories_lsb=0xE8, calories_msb=0x03)
+        assert cmd.encode() == bytes([0x23, 0x02, 0xE8, 0x03])
+
+    def test_get_caps(self) -> None:
+        cmd = csafe_codec.Command.get_caps(capability_code=0x01)
+        assert cmd.encode() == bytes([0x70, 0x01, 0x01])
+
+
+# =============================================================================
+# Wrapper command encoding
+# =============================================================================
+
+
+class TestWrapperCommandEncoding:
+    """Wrapper commands encode opcode + length + concatenated sub-commands.
+
+    Test Techniques Used:
+    - Integration Testing: wrapper encapsulates proprietary sub-commands
+    - Specification-based Testing: wrapper layout matches C2 PM protocol
+    """
+
+    def test_get_pm_cfg_with_sub_commands(self) -> None:
+        fw = csafe_codec.GetPmCfgCommand.fw_version()
+        wt = csafe_codec.GetPmCfgCommand.workout_type()
+        cmd = csafe_codec.Command.get_pm_cfg([fw, wt])
+        encoded = cmd.encode()
+        assert encoded[0] == 0x7E  # wrapper opcode
+        assert encoded[1] == 2  # payload length (2 short sub-cmds)
+        assert encoded[2] == 0x80  # FwVersion
+        assert encoded[3] == 0x89  # WorkoutType
+
+    def test_get_pm_cfg_empty(self) -> None:
+        cmd = csafe_codec.Command.get_pm_cfg([])
+        assert cmd.encode() == bytes([0x7E, 0x00])
+
+    def test_get_pm_data_with_sub_commands(self) -> None:
+        wt = csafe_codec.GetPmDataCommand.work_time()
+        dr = csafe_codec.GetPmDataCommand.drag_factor()
+        cmd = csafe_codec.Command.get_pm_data([wt, dr])
+        encoded = cmd.encode()
+        assert encoded == bytes([0x7F, 0x02, 0xA0, 0xC1])
+
+    def test_set_pm_cfg_with_struct_sub(self) -> None:
+        sub = csafe_codec.SetPmCfgCommand.workout_type(workout_type=5)
+        cmd = csafe_codec.Command.set_pm_cfg([sub])
+        encoded = cmd.encode()
+        assert encoded == bytes([0x76, 3, 0x01, 1, 5])
+
+    def test_set_pm_data_with_short_sub(self) -> None:
+        sub = csafe_codec.SetPmDataCommand.sync_distance()
+        cmd = csafe_codec.Command.set_pm_data([sub])
+        assert cmd.encode() == bytes([0x77, 1, 0xD0])
+
+    def test_set_user_cfg1_with_sub_commands(self) -> None:
+        wt = csafe_codec.SetUserCfg1Command.workout_type(workout_type=4)
+        ic = csafe_codec.SetUserCfg1Command.workout_interval_count(interval_count=3)
+        cmd = csafe_codec.Command.set_user_cfg1([wt, ic])
+        encoded = cmd.encode()
+        assert encoded == bytes([0x1A, 6, 0x01, 1, 4, 0x18, 1, 3])
+
+    def test_wrapper_with_long_sub_command(self) -> None:
+        sub = csafe_codec.GetPmCfgCommand.erg_number(hw_address=0x01020304)
+        cmd = csafe_codec.Command.get_pm_cfg([sub])
+        encoded = cmd.encode()
+        # 0x7E, len=6, then ErgNumber: 0x50, 4, 04, 03, 02, 01
+        assert encoded == bytes([0x7E, 6, 0x50, 4, 0x04, 0x03, 0x02, 0x01])
+
+
+# =============================================================================
+# Top-level encode_commands and build_command_frame
+# =============================================================================
+
+
+class TestEncodeFunctions:
+    """encode_commands and build_command_frame produce correct output.
+
+    Test Techniques Used:
+    - Round-trip Testing: encode then parse standard frame
+    - Integration Testing: combines command encoding with framing
+    """
+
+    def test_encode_commands_single(self) -> None:
+        result = csafe_codec.encode_commands([csafe_codec.Command.get_status()])
+        assert result == bytes([0x80])
+
+    def test_encode_commands_multiple(self) -> None:
+        cmds = [csafe_codec.Command.get_status(), csafe_codec.Command.get_version()]
+        result = csafe_codec.encode_commands(cmds)
+        assert result == bytes([0x80, 0x91])
+
+    def test_encode_commands_empty(self) -> None:
+        assert csafe_codec.encode_commands([]) == b""
+
+    def test_encode_commands_returns_bytes(self) -> None:
+        result = csafe_codec.encode_commands([csafe_codec.Command.get_status()])
+        assert isinstance(result, bytes)
+
+    def test_encode_commands_long(self) -> None:
+        cmd = csafe_codec.Command.set_time(hour=10, minute=30, second=0)
+        result = csafe_codec.encode_commands([cmd])
+        assert result == bytes([0x11, 0x03, 10, 30, 0])
+
+    def test_encode_commands_mixed(self) -> None:
+        cmds = [
+            csafe_codec.Command.get_status(),
+            csafe_codec.Command.set_timeout(timeout=5),
+        ]
+        result = csafe_codec.encode_commands(cmds)
+        assert result == bytes([0x80, 0x13, 0x01, 5])
+
+    def test_build_command_frame_roundtrip(self) -> None:
+        cmds = [csafe_codec.Command.get_status()]
+        frame = csafe_codec.build_command_frame(cmds)
+        parsed = csafe_codec.parse_standard_frame(frame)
+        assert parsed == bytes([0x80])
+
+    def test_build_command_frame_returns_bytes(self) -> None:
+        frame = csafe_codec.build_command_frame([csafe_codec.Command.get_status()])
+        assert isinstance(frame, bytes)
+
+    def test_build_command_frame_multiple_roundtrip(self) -> None:
+        cmds = [csafe_codec.Command.get_status(), csafe_codec.Command.get_version()]
+        frame = csafe_codec.build_command_frame(cmds)
+        parsed = csafe_codec.parse_standard_frame(frame)
+        assert parsed == bytes([0x80, 0x91])
+
+    def test_build_command_frame_with_wrapper(self) -> None:
+        fw = csafe_codec.GetPmCfgCommand.fw_version()
+        cmd = csafe_codec.Command.get_pm_cfg([fw])
+        frame = csafe_codec.build_command_frame([cmd])
+        parsed = csafe_codec.parse_standard_frame(frame)
+        assert parsed == bytes([0x7E, 0x01, 0x80])
+
+    def test_build_command_frame_empty(self) -> None:
+        frame = csafe_codec.build_command_frame([])
+        parsed = csafe_codec.parse_standard_frame(frame)
+        assert parsed == b""
+
+
+# =============================================================================
+# repr / str tests
+# =============================================================================
+
+
+class TestCommandRepr:
+    """__repr__ and __str__ return meaningful debug strings.
+
+    Test Techniques Used:
+    - Error Guessing: verify repr contains variant name and field values
+    """
+
+    def test_repr_short_command(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.fw_version()
+        assert "FwVersion" in repr(cmd)
+
+    def test_repr_struct_command(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.erg_number(hw_address=42)
+        assert "ErgNumber" in repr(cmd)
+        assert "42" in repr(cmd)
+
+    def test_str_equals_repr(self) -> None:
+        cmd = csafe_codec.GetPmCfgCommand.fw_version()
+        assert str(cmd) == repr(cmd)
+
+    def test_repr_public_short(self) -> None:
+        cmd = csafe_codec.Command.get_status()
+        assert "GetStatus" in repr(cmd)
+
+    def test_repr_public_long(self) -> None:
+        cmd = csafe_codec.Command.set_time(hour=10, minute=30, second=0)
+        assert "SetTime" in repr(cmd)
+
+    def test_repr_set_pm_data(self) -> None:
+        cmd = csafe_codec.SetPmDataCommand.sync_distance()
+        assert "SyncDistance" in repr(cmd)
+
+    def test_repr_set_user_cfg1(self) -> None:
+        cmd = csafe_codec.SetUserCfg1Command.workout_type(workout_type=3)
+        assert "WorkoutType" in repr(cmd)
+        assert "3" in repr(cmd)

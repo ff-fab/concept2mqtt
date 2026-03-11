@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 pub mod commands;
 pub mod framing;
+mod py_command_builders;
 mod py_commands;
 
 /// CSAFE protocol codec for Concept2 PM5 rowing monitors.
@@ -39,6 +40,9 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Command types and enums
     py_commands::register(m)?;
+
+    // Command builder classes
+    py_command_builders::register(m)?;
 
     Ok(())
 }

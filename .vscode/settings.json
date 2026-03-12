@@ -36,5 +36,6 @@
 
     // Demos
     "showboat": true
-  }
+  },
+  "claudeCodeChat.permissions.yoloMode": false
 }

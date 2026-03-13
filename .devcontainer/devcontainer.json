@@ -16,7 +16,7 @@
   },
 
   "remoteEnv": {
-    "PATH": "/home/vscode/.local/bin:/workspace/.venv/bin:${containerEnv:PATH}",
+    "PATH": "/home/vscode/.cargo/bin:/home/vscode/.local/bin:/workspace/.venv/bin:${containerEnv:PATH}",
     "UV_LINK_MODE": "copy",
     "GH_PAGER": "cat",
     "CONTEXT7_API_KEY": "${localEnv:CONTEXT7_API_KEY}"

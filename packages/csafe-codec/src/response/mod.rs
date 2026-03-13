@@ -18,7 +18,7 @@ pub enum ResponseError {
     Empty,
     /// The status byte contains an unknown server state value.
     InvalidServerState { value: u8 },
-    /// A command response block is truncated (missing byte count or data).
+    /// A command response block is truncated (missing byte count).
     TruncatedCommand { position: usize },
     /// A command response claims more data bytes than remain in the buffer.
     InsufficientData {
@@ -138,7 +138,7 @@ impl fmt::Display for ServerState {
 /// Layout (protocol.yaml §response_format.status_byte, Table 9):
 /// ```text
 ///   bit 7      : frame_toggle (alternates 0/1 per frame)
-///   bits 6     : reserved (ignored)
+///   bit 6      : reserved (ignored)
 ///   bits 5-4   : previous_frame_status (Ok/Reject/Bad/NotReady)
 ///   bits 3-0   : server_state (PM state machine)
 /// ```

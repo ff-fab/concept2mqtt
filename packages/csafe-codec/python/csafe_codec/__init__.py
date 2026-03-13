@@ -54,14 +54,12 @@ from csafe_codec._native import (
     AdditionalStatus2,
     AdditionalStatus3,
     AdditionalStrokeData,
-    # Command builder classes
     Command,
     CommandResponse,
     EndOfWorkoutAdditionalSummary,
     EndOfWorkoutAdditionalSummary2,
     EndOfWorkoutSummary,
     ForceCurveData,
-    # BLE notification decoder classes
     GeneralStatus,
     GetPmCfgCommand,
     GetPmDataCommand,
@@ -72,11 +70,9 @@ from csafe_codec._native import (
     SetPmDataCommand,
     SetUserCfg1Command,
     SplitIntervalData,
-    # Response parser classes
     StatusByte,
     StrokeData,
     __version__,
-    # Encoding functions
     build_command_frame,
     build_extended_frame,
     build_standard_frame,
@@ -90,14 +86,12 @@ from csafe_codec._native import (
     decode_end_of_workout_additional_summary_2,
     decode_end_of_workout_summary,
     decode_force_curve_data,
-    # BLE notification decode functions
     decode_general_status,
     decode_heart_rate_belt_info,
     decode_logged_workout,
     decode_multiplexed,
     decode_split_interval_data,
     decode_stroke_data,
-    # Enum lookup functions
     duration_type_name,
     duration_type_values,
     encode_commands,
@@ -110,7 +104,6 @@ from csafe_codec._native import (
     parse_frame,
     parse_response,
     parse_standard_frame,
-    # Response parser functions
     parse_status_byte,
     rowing_state_name,
     rowing_state_values,

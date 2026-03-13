@@ -660,6 +660,8 @@ pub enum RowingCharacteristic {
     HeartRateBeltInfo(HeartRateBeltInfo),
     EndOfWorkoutAdditionalSummary2(EndOfWorkoutAdditionalSummary2),
     ForceCurveData(ForceCurveData),
+    AdditionalStatus3(AdditionalStatus3),
+    LoggedWorkout(LoggedWorkout),
 }
 
 /// Error from [`decode_multiplexed`].
@@ -669,6 +671,10 @@ pub enum MultiplexedError {
     Empty,
     /// Unknown characteristic identifier.
     UnknownId { id: u8 },
+    /// The multiplexed layout differs from the dedicated characteristic
+    /// layout for this ID (due to the 20-byte BLE packet limit).
+    /// Mux-specific decoders are not yet implemented for these IDs.
+    MuxLayoutDiffers { id: u8 },
     /// The payload after the identifier byte failed to decode.
     Decode(BleDecodeError),
 }
@@ -679,6 +685,13 @@ impl fmt::Display for MultiplexedError {
             Self::Empty => write!(f, "multiplexed packet is empty"),
             Self::UnknownId { id } => {
                 write!(f, "unknown multiplexed characteristic id: 0x{id:02X}")
+            }
+            Self::MuxLayoutDiffers { id } => {
+                write!(
+                    f,
+                    "multiplexed layout for 0x{id:02X} differs from dedicated characteristic; \
+                     mux-specific decoder not yet implemented"
+                )
             }
             Self::Decode(e) => write!(f, "decode error: {e}"),
         }
@@ -704,6 +717,12 @@ impl From<BleDecodeError> for MultiplexedError {
 ///
 /// The first byte identifies which rowing characteristic the payload
 /// corresponds to; the remaining bytes are decoded accordingly.
+///
+/// **Note:** Seven multiplexed IDs (0x32, 0x33, 0x35, 0x36, 0x38, 0x39,
+/// 0x3A) have layouts that differ from their dedicated characteristic
+/// counterparts due to the 20-byte BLE packet limit.  These currently
+/// return [`MultiplexedError::MuxLayoutDiffers`].  The remaining IDs
+/// have identical layouts and are fully supported.
 pub fn decode_multiplexed(data: &[u8]) -> Result<RowingCharacteristic, MultiplexedError> {
     if data.is_empty() {
         return Err(MultiplexedError::Empty);
@@ -712,32 +731,12 @@ pub fn decode_multiplexed(data: &[u8]) -> Result<RowingCharacteristic, Multiplex
     let payload = &data[1..];
 
     match id {
+        // Identical layout — safe to reuse dedicated decoders.
         0x31 => Ok(RowingCharacteristic::GeneralStatus(decode_general_status(
             payload,
         )?)),
-        0x32 => Ok(RowingCharacteristic::AdditionalStatus1(
-            decode_additional_status_1(payload)?,
-        )),
-        0x33 => Ok(RowingCharacteristic::AdditionalStatus2(
-            decode_additional_status_2(payload)?,
-        )),
-        0x35 => Ok(RowingCharacteristic::StrokeData(decode_stroke_data(
-            payload,
-        )?)),
-        0x36 => Ok(RowingCharacteristic::AdditionalStrokeData(
-            decode_additional_stroke_data(payload)?,
-        )),
         0x37 => Ok(RowingCharacteristic::SplitIntervalData(
             decode_split_interval_data(payload)?,
-        )),
-        0x38 => Ok(RowingCharacteristic::AdditionalSplitIntervalData(
-            decode_additional_split_interval_data(payload)?,
-        )),
-        0x39 => Ok(RowingCharacteristic::EndOfWorkoutSummary(
-            decode_end_of_workout_summary(payload)?,
-        )),
-        0x3A => Ok(RowingCharacteristic::EndOfWorkoutAdditionalSummary(
-            decode_end_of_workout_additional_summary(payload)?,
         )),
         0x3B => Ok(RowingCharacteristic::HeartRateBeltInfo(
             decode_heart_rate_belt_info(payload)?,
@@ -748,6 +747,19 @@ pub fn decode_multiplexed(data: &[u8]) -> Result<RowingCharacteristic, Multiplex
         0x3D => Ok(RowingCharacteristic::ForceCurveData(
             decode_force_curve_data(payload)?,
         )),
+        0x3E => Ok(RowingCharacteristic::AdditionalStatus3(
+            decode_additional_status_3(payload)?,
+        )),
+        0x3F => Ok(RowingCharacteristic::LoggedWorkout(decode_logged_workout(
+            payload,
+        )?)),
+
+        // Layout differs from dedicated characteristic — mux-specific
+        // decoders not yet implemented.
+        0x32 | 0x33 | 0x35 | 0x36 | 0x38 | 0x39 | 0x3A => {
+            Err(MultiplexedError::MuxLayoutDiffers { id })
+        }
+
         _ => Err(MultiplexedError::UnknownId { id }),
     }
 }

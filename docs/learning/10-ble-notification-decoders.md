@@ -259,13 +259,20 @@ pub fn decode_multiplexed(data: &[u8]) -> Result<RowingCharacteristic, Multiplex
     let payload = &data[1..];
 
     match id {
+        // Identical layout — safe to reuse dedicated decoders.
         0x31 => Ok(RowingCharacteristic::GeneralStatus(
             decode_general_status(payload)?
         )),
-        0x32 => Ok(RowingCharacteristic::AdditionalStatus1(
-            decode_additional_status_1(payload)?
+        0x37 => Ok(RowingCharacteristic::SplitIntervalData(
+            decode_split_interval_data(payload)?
         )),
-        // ...
+        // ... 5 more identical-layout IDs ...
+
+        // Layout differs — mux-specific decoders not yet implemented.
+        0x32 | 0x33 | 0x35 | 0x36 | 0x38 | 0x39 | 0x3A => {
+            Err(MultiplexedError::MuxLayoutDiffers { id })
+        }
+
         _ => Err(MultiplexedError::UnknownId { id }),
     }
 }
@@ -309,6 +316,28 @@ The Rust version is more verbose but gives you exhaustiveness checking —
 if you add a new variant to `RowingCharacteristic`, the compiler forces you
 to handle it everywhere the enum is matched.
 
+### Multiplexed Layout Divergence
+
+A subtlety: the multiplexed channel prepends a 1-byte ID, consuming one of
+the 20-byte BLE packet limit.  To stay within 20 bytes, the PM5 adjusts
+the field layout for 7 of the 14 characteristics when sent over the mux
+channel.  For example, Additional Status 1 (0x32) adds `average_power`
+in mux mode (17 → 19 bytes), while Additional Status 2 (0x33) *removes*
+`average_power` (20 → 18 bytes).
+
+This means we **cannot** reuse the dedicated characteristic decoders for
+these 7 IDs.  Our `decode_multiplexed` returns a `MuxLayoutDiffers` error
+for them, leaving room for mux-specific decoders in a future PR:
+
+```rust
+0x32 | 0x33 | 0x35 | 0x36 | 0x38 | 0x39 | 0x3A => {
+    Err(MultiplexedError::MuxLayoutDiffers { id })
+}
+```
+
+The remaining 7 IDs (0x31, 0x37, 0x3B–0x3F) have identical layouts and
+safely reuse their dedicated decoders.
+
 ---
 
 ## Concept 7: Error Type Composition
@@ -326,7 +355,8 @@ pub enum BleDecodeError {
 pub enum MultiplexedError {
     Empty,
     UnknownId { id: u8 },
-    Decode(BleDecodeError),    // ← wraps the lower-level error
+    MuxLayoutDiffers { id: u8 },  // ← layout mismatch (see §6)
+    Decode(BleDecodeError),       // ← wraps the lower-level error
 }
 ```
 

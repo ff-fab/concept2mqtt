@@ -545,6 +545,32 @@ fn multiplexed_heart_rate_belt() {
 }
 
 #[test]
+fn multiplexed_additional_status_3() {
+    let mut data = vec![0x3E];
+    data.extend_from_slice(&[0u8; 12]);
+    let result = decode_multiplexed(&data).unwrap();
+    assert!(matches!(result, RowingCharacteristic::AdditionalStatus3(_)));
+}
+
+#[test]
+fn multiplexed_logged_workout() {
+    let mut data = vec![0x3F];
+    data.extend_from_slice(&[0u8; 15]);
+    let result = decode_multiplexed(&data).unwrap();
+    assert!(matches!(result, RowingCharacteristic::LoggedWorkout(_)));
+}
+
+#[test]
+fn multiplexed_layout_differs() {
+    // These 7 IDs have different mux vs dedicated layouts.
+    for id in [0x32, 0x33, 0x35, 0x36, 0x38, 0x39, 0x3A] {
+        let data = [id, 0x00];
+        let err = decode_multiplexed(&data).unwrap_err();
+        assert_eq!(err, MultiplexedError::MuxLayoutDiffers { id });
+    }
+}
+
+#[test]
 fn multiplexed_unknown_id() {
     let data = [0xFF, 0x00];
     let err = decode_multiplexed(&data).unwrap_err();

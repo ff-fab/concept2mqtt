@@ -3,8 +3,10 @@ use pyo3::prelude::*;
 pub mod ble;
 pub mod commands;
 pub mod framing;
+mod py_ble_decoders;
 mod py_command_builders;
 mod py_commands;
+mod py_response;
 pub mod response;
 
 /// CSAFE protocol codec for Concept2 PM5 rowing monitors.
@@ -45,6 +47,12 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Command builder classes
     py_command_builders::register(m)?;
+
+    // BLE notification decoders
+    py_ble_decoders::register(m)?;
+
+    // Response parser
+    py_response::register(m)?;
 
     Ok(())
 }

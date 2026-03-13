@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+pub mod ble;
 pub mod commands;
 pub mod framing;
 mod py_command_builders;

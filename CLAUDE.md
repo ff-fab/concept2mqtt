@@ -18,15 +18,15 @@ follow them.
 
 ## Skills
 
-These are reusable workflow definitions. Read the linked file before executing.
+Reusable workflow definitions available as slash commands in Claude Code (`/pr-review`,
+`/pre-pr-gate`, `/showboat-demo`) and as Copilot skills. The canonical body lives in
+`.github/skills/`; `.claude/skills/` adds Claude Code metadata (`allowed-tools`).
 
-- [.github/skills/pr-review/SKILL.md](.github/skills/pr-review/SKILL.md) — Fetch all PR
-  feedback via [fetch-pr-feedback.sh](.github/skills/pr-review/fetch-pr-feedback.sh),
-  then analyze CI, review comments, and code quality
-- [.github/skills/pre-pr-gate/SKILL.md](.github/skills/pre-pr-gate/SKILL.md) —
-  End-of-session workflow: `task pre-pr`, close beads, push, create PR
-- [.github/skills/showboat-demo/SKILL.md](.github/skills/showboat-demo/SKILL.md) —
-  Create reproducible proof-of-work demos with `showboat`
+- **pr-review** — Fetch all PR feedback via
+  [fetch-pr-feedback.sh](.github/skills/pr-review/fetch-pr-feedback.sh), then analyze
+  CI, review comments, and code quality
+- **pre-pr-gate** — End-of-session workflow: `task pre-pr`, close beads, push, create PR
+- **showboat-demo** — Create reproducible proof-of-work demos with `showboat`
 
 ## Key Rules
 

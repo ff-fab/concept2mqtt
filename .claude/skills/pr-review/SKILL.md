@@ -6,7 +6,14 @@ description:
   arguments, reviews ALL open PRs (excluding please-release). Use when the user says
   "review this PR", "check PR feedback", "what did reviewers say", "review all PRs",
   "address review comments", or any variation involving pull request review.
+allowed-tools:
+  - Bash(gh *)
+  - Bash(bash *)
+  - Read
+  - Grep
 ---
+
+<!-- ultrathink -->
 
 # PR Review
 
@@ -15,7 +22,14 @@ actionable reviews with enough context to learn from each finding.
 
 ## Step 1 — Determine which PRs to review
 
-List every open PR and filter:
+### Mode A: specific PR (argument provided)
+
+If `$ARGUMENTS` contains a PR number, review that single PR. Skip to "Collect PR data"
+below.
+
+### Mode B: all open PRs (no argument)
+
+If `$ARGUMENTS` is empty, list every open PR and filter:
 
 ```bash
 gh pr list --state open --json number,title,author,headRefName \

@@ -4,6 +4,7 @@ pub mod commands;
 pub mod framing;
 mod py_command_builders;
 mod py_commands;
+pub mod response;
 
 /// CSAFE protocol codec for Concept2 PM5 rowing monitors.
 ///

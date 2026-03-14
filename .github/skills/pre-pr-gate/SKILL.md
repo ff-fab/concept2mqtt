@@ -1,11 +1,11 @@
 ---
 name: pre-pr-gate
 description:
-  Pre-PR quality gate. Runs deterministic checks, syncs beads state, pushes,
-  and creates the PR. Use when the user says "prepare a PR", "let's wrap up",
-  "land the plane", "session complete", "pre-pr", "ready to push", or any
-  variation of finishing work and opening a pull request. Also use when the
-  user has just completed a task and wants to ship it.
+  Pre-PR quality gate. Runs deterministic checks, syncs beads state, pushes, and creates
+  the PR. Use when the user says "prepare a PR", "let's wrap up", "land the plane",
+  "session complete", "pre-pr", "ready to push", or any variation of finishing work and
+  opening a pull request. Also use when the user has just completed a task and wants to
+  ship it.
 ---
 
 # Pre-PR Quality Gate
@@ -49,7 +49,10 @@ and explain the issue to the user rather than looping indefinitely.
 
 ## Step 3 — Close beads tasks
 
-Check for completed beads tasks and sync state:
+If `bd` is not available or `.beads/` doesn't exist, skip this step
+entirely — beads is not present in every project.
+
+Otherwise, check for completed beads tasks and sync state:
 
 ```bash
 bd list
@@ -66,9 +69,6 @@ git add .beads/ && git commit -m "chore: update beads state"
 If there are no completed tasks to close, still run `bd export` and check
 whether `.beads/` has any uncommitted changes (the user may have modified
 state manually). Commit them if so.
-
-If `bd` is not available or `.beads/` doesn't exist, skip this step
-entirely — beads is not present in every project.
 
 ## Step 4 — Push
 

@@ -5,16 +5,13 @@ applyTo: '**/*.md'
 
 # Documentation Instructions
 
-## Documentation System\
+## Documentation System
 
 | Component      | Choice                                                         |
 | -------------- | -------------------------------------------------------------- |
 | Site Generator | Zensical (`zensical.toml`)                                     |
 | Theme          | Zensical (modern theme)                                        |
-
-
 | Structure      | Structured "information typing" (DITA): Concept/Task/Reference |
-
 | CLI            | `task docs:serve`, `task docs:build`                           |
 
 ## ADR Format

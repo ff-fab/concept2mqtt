@@ -35,6 +35,15 @@ approve-and-merge. Do NOT enable auto-merge. Wait for an explicit user instructi
 - Do not depend on GitKraken MCP authentication in this repository.
 - When multiple automation paths exist, choose `gh` commands first.
 
+## Library & API Documentation
+
+This project has **Context7 MCP** configured. When you need documentation for any
+library, framework, or API — use Context7 automatically instead of relying on
+training data. This applies to code generation, debugging, and review tasks.
+
+Do not ask the user whether to use Context7; just invoke it when library context
+would improve accuracy.
+
 ## Architecture Decision Records
 
 All major decisions are documented in `docs/adr/`. **Follow these decisions.**

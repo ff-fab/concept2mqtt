@@ -42,9 +42,16 @@ echo "Fetching all feedback for PR #${PR_NUMBER} in ${REPO}..." >&2
 
 # ---------- helper: paginated gh api call ----------
 # Fetches all pages and merges the JSON arrays into one.
+# Uses jq -s to safely merge potentially separate page arrays into one.
 fetch_all_pages() {
     local endpoint="$1"
-    gh api --paginate "$endpoint" 2>/dev/null || echo "[]"
+    local raw
+    raw=$(gh api --paginate "$endpoint" 2>/dev/null) || raw=""
+    if [[ -z "$raw" ]]; then
+        echo "[]"
+    else
+        echo "$raw" | jq -s 'add // []' 2>/dev/null || echo "[]"
+    fi
 }
 
 # ---------- 1. PR metadata ----------
@@ -111,27 +118,27 @@ if [[ -n "$HEAD_SHA" ]]; then
 
     # Check-runs endpoint returns {total_count, check_runs: [...]}, NOT a bare
     # array — so we must NOT use fetch_all_pages (which assumes arrays).
-    # Use per_page=100 and extract the array directly with --jq.
-    CHECK_RUNS=$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs" \
-        -F per_page=100 \
+    # Use ?per_page=100 as a query param (NOT -F, which forces POST).
+    CHECK_RUNS=$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100" \
         --jq '[.check_runs[]? | {name, status, conclusion, html_url, output: {title: .output.title, summary: (.output.summary // "" | if length > 500 then .[0:500] + "... (truncated)" else . end)}}]' \
         2>/dev/null || echo '[]')
 
-    STATE=$(echo "$STATUSES" | jq -r '.state')
-    STATUS_ARRAY=$(echo "$STATUSES" | jq '.statuses')
+    STATE=$(echo "$STATUSES" | jq -r '.state' 2>/dev/null || echo 'unknown')
+    STATUS_ARRAY=$(echo "$STATUSES" | jq '.statuses' 2>/dev/null || echo '[]')
 
     CI_STATUS=$(jq -n \
         --arg state "$STATE" \
         --argjson statuses "$STATUS_ARRAY" \
         --argjson check_runs "$CHECK_RUNS" \
-        '{state: $state, statuses: $statuses, check_runs: $check_runs}')
+        '{state: $state, statuses: $statuses, check_runs: $check_runs}' \
+        2>/dev/null || echo '{"state": "unknown", "statuses": [], "check_runs": []}')
 fi
 
 # ---------- assemble final output ----------
-REVIEW_COMMENT_COUNT=$(echo "$REVIEW_COMMENTS" | jq 'length')
-CONVERSATION_COUNT=$(echo "$CONVERSATION_COMMENTS" | jq 'length')
-REVIEW_COUNT=$(echo "$REVIEWS" | jq 'length')
-FILE_COUNT=$(echo "$CHANGED_FILES" | jq 'length')
+REVIEW_COMMENT_COUNT=$(echo "$REVIEW_COMMENTS" | jq 'length' 2>/dev/null || echo '0')
+CONVERSATION_COUNT=$(echo "$CONVERSATION_COMMENTS" | jq 'length' 2>/dev/null || echo '0')
+REVIEW_COUNT=$(echo "$REVIEWS" | jq 'length' 2>/dev/null || echo '0')
+FILE_COUNT=$(echo "$CHANGED_FILES" | jq 'length' 2>/dev/null || echo '0')
 
 echo "" >&2
 echo "Summary: ${FILE_COUNT} files changed, ${REVIEW_COUNT} reviews, ${REVIEW_COMMENT_COUNT} inline comments, ${CONVERSATION_COUNT} conversation comments" >&2

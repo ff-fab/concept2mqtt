@@ -2,6 +2,8 @@
 
 import pytest
 
+from .fixtures.config import _reset_settings_cache as _reset_settings_cache
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest markers."""

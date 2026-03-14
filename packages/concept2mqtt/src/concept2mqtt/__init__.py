@@ -8,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     # Prefer the generated version file (setuptools_scm at build time)
     from ._version import __version__
-except ImportError:
+except ImportError:  # pragma: no cover
     try:
         # Fallback to installed package metadata
         __version__ = version("concept2mqtt")

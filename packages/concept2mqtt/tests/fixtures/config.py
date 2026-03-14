@@ -22,9 +22,9 @@ def _reset_settings_cache() -> Iterator[None]:
 
     Usage:
         def test_env_override(_reset_settings_cache, monkeypatch):
-            monkeypatch.setenv("OPENHAB_URL", "http://custom:8080")
+            monkeypatch.setenv("PORT", "9999")
             settings = get_settings()
-            assert settings.openhab_url == "http://custom:8080"
+            assert settings.port == 9999
     """
     get_settings.cache_clear()
     yield

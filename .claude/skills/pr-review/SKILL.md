@@ -33,7 +33,7 @@ If `$ARGUMENTS` is empty, list every open PR and filter:
 
 ```bash
 gh pr list --state open --json number,title,author,headRefName \
-  --jq '.[] | select(.author.login != "please-release" and (.headRefName | startswith("please-release") | not))'
+  --jq '.[] | select((.author.login == "please-release" | not) and (.headRefName | startswith("please-release") | not))'
 ```
 
 This excludes PRs authored by `please-release` AND PRs from branches starting with
@@ -53,7 +53,7 @@ comments, conversation comments, and CI status) in a single deterministic pass w
 pagination.
 
 ```bash
-bash "$(skill_dir)/scripts/fetch-pr-feedback.sh" <PR_NUMBER>
+bash "$(skill_dir)/fetch-pr-feedback.sh" <PR_NUMBER>
 ```
 
 **This step is mandatory for every PR.** Do not skip it. Do not substitute ad-hoc `gh`

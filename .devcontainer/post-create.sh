@@ -2,7 +2,21 @@
 # Post-create setup script for devcontainer
 set -e
 
-export PATH="/home/vscode/.local/bin:$PATH"
+export PATH="/home/vscode/.cargo/bin:/home/vscode/.local/bin:$PATH"
+
+# Symlink Rust toolchain binaries into /usr/local/bin so they are available in
+# all process types (non-interactive shells, pre-commit hooks, task subprocesses)
+# without requiring .bashrc / .cargo/env to be sourced first.
+if [ -d "/home/vscode/.cargo/bin" ]; then
+    for bin in cargo rustc rustfmt cargo-fmt cargo-clippy rustup; do
+        src="/home/vscode/.cargo/bin/${bin}"
+        dst="/usr/local/bin/${bin}"
+        if [ -f "$src" ] && [ ! -e "$dst" ]; then
+            sudo ln -sf "$src" "$dst"
+        fi
+    done
+    echo "✅ Rust toolchain symlinked into /usr/local/bin"
+fi
 
 ensure_git_repo() {
     local repo_root="/workspace"

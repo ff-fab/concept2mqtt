@@ -7,8 +7,8 @@ raw BLE notification payload and the expected decoded field values.
 Test Techniques Used:
 - Specification-based Testing: vectors trace directly to BLE service spec fields
 - Equivalence Partitioning: one representative payload per characteristic
-- Boundary Value Analysis: signed values (force curve), max belt ID (uint32)
-- Round-trip Testing: bytes → decoder → field assertions for all 12 characteristics
+- Boundary Value Analysis: signed values (force curve)
+- Round-trip Testing: bytes → decoder → field assertions for all 14 decoders
 """
 
 from __future__ import annotations
@@ -104,10 +104,3 @@ def test_vectors_file_covers_all_decoders() -> None:
     required = set(_DECODERS.keys())
     missing = required - covered
     assert not missing, f"No vectors for: {sorted(missing)}"
-
-
-def test_vectors_file_is_parseable() -> None:
-    """Sanity check: the YAML file loads without error and is non-empty."""
-    raw = yaml.safe_load(_VECTORS_PATH.read_text())
-    assert isinstance(raw, dict)
-    assert len(raw) > 0

@@ -11,8 +11,8 @@ if [ -d "/home/vscode/.cargo/bin" ]; then
     for bin in cargo rustc rustfmt cargo-fmt cargo-clippy rustup; do
         src="/home/vscode/.cargo/bin/${bin}"
         dst="/usr/local/bin/${bin}"
-        if [ -f "$src" ] && [ ! -e "$dst" ]; then
-            sudo ln -sf "$src" "$dst"
+        if [ -f "$src" ]; then
+            sudo ln -sf "$src" "$dst" 2>/dev/null || ln -sf "$src" "$dst" 2>/dev/null || true
         fi
     done
     echo "✅ Rust toolchain symlinked into /usr/local/bin"

@@ -38,8 +38,8 @@ general_status:
 additional_status_1:
   - id: steady_state
     description: >
-      Steady-state row: 100 s elapsed, 2.0 m/s speed, 30 spm, HR 140 bpm,
-      500m pace 5 s, avg pace 10 s, erg type StaticD.
+      Steady-state row: 100 s elapsed, 0.200 m/s speed, 30 spm, HR 140 bpm,
+      500m pace 5.00 s, avg pace 10.00 s, erg type StaticD.
     bytes: "10 27 00  C8 00  1E  8C  F4 01  E8 03  00 00  00 00 00  05"
     expected:
       elapsed_time_cs: 10000    # 0x002710
@@ -126,7 +126,7 @@ additional_split_interval_data:
   - id: split_summary
     description: >
       Split 1 summary: 100 s elapsed, 30 spm, HR 140 work / 80 rest,
-      5 s 500m pace, 100 kcal, 300 cal/hr, 200 mm/s, 150 W,
+      50.0 s/500m pace, 100 kcal, 300 cal/hr, 200 mm/s, 150 W,
       drag 120, erg StaticD.
     bytes: "10 27 00  1E  8C  50  F4 01  64 00  2C 01  C8 00  96 00  78  01  05"
     expected:
@@ -149,7 +149,7 @@ end_of_workout_summary:
     description: >
       Just Row workout complete: log date 1, log time 2, 100 s / 100 m,
       30 spm, HR 140 end / 130 avg / 80 min / 170 max, drag 120,
-      HR 100 recovery, Just Row, 5 s 500m pace.
+      HR 100 recovery, Just Row, 50.0 s/500m pace.
     bytes: "01 00  02 00  10 27 00  E8 03 00  1E  8C  82  50  AA  78  64  02  F4 01"
     expected:
       log_entry_date: 1
@@ -201,7 +201,7 @@ heart_rate_belt_info:
 end_of_workout_additional_summary_2:
   - id: game_workout
     description: >
-      Game workout summary: log date 1 / time 2, 5 s 500m avg pace,
+      Game workout summary: log date 1 / time 2, 50.0 s/500m avg pace,
       game ID 3, score 1000, erg StaticD.
     bytes: "01 00  02 00  F4 01  03  E8 03  05"
     expected:

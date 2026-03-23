@@ -1,0 +1,267 @@
+# BLE decoder test vectors
+# Derived from: docs/planning/spec/csafe/ble_services.yaml
+# Source: Concept2 PM CSAFE Communication Definition, Rev 0.25 (2023-03-23)
+#
+# Each vector specifies a raw notification payload (hex bytes) and the expected
+# decoded field values.  Bytes are little-endian as transmitted over BLE.
+#
+# Format:
+#   - id:          unique test identifier
+#     description: human-readable scenario
+#     bytes:       space-separated hex octets (e.g. "10 27 00")
+#     expected:    map of decoded field name → expected value
+#
+# All multi-byte integers are assembled little-endian by the decoder;
+# the hex bytes below match the on-wire layout in ble_services.yaml.
+
+# ── 0x0031  General Status (19 bytes) ─────────────────────────────────
+general_status:
+  - id: mid_row
+    description: >
+      Mid-row snapshot: 100 s elapsed, 100 m distance, active Just Row workout,
+      drag factor 120.
+    bytes: "10 27 00  E8 03 00  02 01 05 01 02  D0 07 00  88 13 00  00  78"
+    expected:
+      elapsed_time_cs: 10000    # 0x002710 = 10000 cs = 100 s
+      distance_dm: 1000         # 0x0003E8 = 1000 dm = 100 m
+      workout_type: 2
+      interval_type: 1
+      workout_state: 5
+      rowing_state: 1
+      stroke_state: 2
+      total_work_distance_dm: 2000   # 0x0007D0
+      workout_duration: 5000         # 0x001388
+      workout_duration_type: 0       # time-based
+      drag_factor: 120
+
+# ── 0x0032  Additional Status 1 (17 bytes) ────────────────────────────
+additional_status_1:
+  - id: steady_state
+    description: >
+      Steady-state row: 100 s elapsed, 0.200 m/s speed, 30 spm, HR 140 bpm,
+      500m pace 5.00 s, avg pace 10.00 s, erg type StaticD.
+    bytes: "10 27 00  C8 00  1E  8C  F4 01  E8 03  00 00  00 00 00  05"
+    expected:
+      elapsed_time_cs: 10000    # 0x002710
+      speed_mms: 200            # 0x00C8 = 200 mm/s = 0.200 m/s
+      stroke_rate: 30           # 0x1E
+      heartrate: 140            # 0x8C
+      current_pace_cs: 500      # 0x01F4
+      average_pace_cs: 1000     # 0x03E8
+      rest_distance: 0
+      rest_time_cs: 0
+      erg_machine_type: 5
+
+# ── 0x0033  Additional Status 2 (20 bytes) ────────────────────────────
+additional_status_2:
+  - id: interval_row
+    description: >
+      Interval 3 of a workout: 100 s elapsed, 200 W avg power, 100 kcal total,
+      500m split 5 s pace, last split 600 ds = 60 s over 1000 m.
+    bytes: "10 27 00  03  C8 00  64 00  F4 01  96 00  2C 01  58 02 00  E8 03 00"
+    expected:
+      elapsed_time_cs: 10000
+      interval_count: 3
+      average_power: 200
+      total_calories: 100
+      split_avg_pace_cs: 500
+      split_avg_power: 150
+      split_avg_calories: 300
+      last_split_time_ds: 600    # 0x000258 = 600 ds = 60 s
+      last_split_distance: 1000  # 0x0003E8 m
+
+# ── 0x0035  Stroke Data (20 bytes) ────────────────────────────────────
+stroke_data:
+  - id: typical_stroke
+    description: >
+      Stroke 10 at 100 s: 0.80 m drive, 0.40 s drive time, 200 cs recovery,
+      8.00 m/stroke, 50.0 lbs peak, 30.0 lbs avg, 60.0 J work/stroke.
+    bytes: "10 27 00  E8 03 00  50  28  C8 00  20 03  F4 01  2C 01  58 02  0A 00"
+    expected:
+      elapsed_time_cs: 10000
+      distance_dm: 1000
+      drive_length: 80           # 0.01 m units → 0.80 m
+      drive_time: 40             # 0.01 s units → 0.40 s
+      stroke_recovery_time_cs: 200
+      stroke_distance: 800       # 0.01 m units → 8.00 m
+      peak_drive_force: 500      # 0.1 lbs units → 50.0 lbs
+      average_drive_force: 300   # 0.1 lbs units → 30.0 lbs
+      work_per_stroke: 600       # 0.1 J units → 60.0 J
+      stroke_count: 10
+
+# ── 0x0036  Additional Stroke Data (15 bytes) ─────────────────────────
+additional_stroke_data:
+  - id: stroke_power
+    description: >
+      Stroke power data: 100 s elapsed, 200 W power, 300 cal/hr rate,
+      stroke 10, projected 900 s / 2000 m remaining.
+    bytes: "10 27 00  C8 00  2C 01  0A 00  84 03 00  D0 07 00"
+    expected:
+      elapsed_time_cs: 10000
+      stroke_power: 200
+      stroke_calories: 300
+      stroke_count: 10
+      projected_work_time_s: 900    # 0x000384 s
+      projected_work_distance: 2000 # 0x0007D0 m
+
+# ── 0x0037  Split/Interval Data (18 bytes) ────────────────────────────
+split_interval_data:
+  - id: rest_interval
+    description: >
+      Rest interval 2: 100 s elapsed, 100 m covered, 60 s split time,
+      50 m split distance, 60 s rest, no rest distance, type distance.
+    bytes: "10 27 00  E8 03 00  58 02 00  F4 01 00  3C 00  00 00  01  02"
+    expected:
+      elapsed_time_cs: 10000
+      distance_dm: 1000
+      split_interval_time_ds: 600    # 0x000258 ds = 60 s
+      split_interval_distance: 500   # 0x0001F4 m
+      interval_rest_time_s: 60
+      interval_rest_distance: 0
+      split_interval_type: 1
+      split_interval_number: 2
+
+# ── 0x0038  Additional Split/Interval Data (19 bytes) ─────────────────
+additional_split_interval_data:
+  - id: split_summary
+    description: >
+      Split 1 summary: 100 s elapsed, 30 spm, HR 140 work / 80 rest,
+      50.0 s/500m pace, 100 kcal, 300 cal/hr, 200 mm/s, 150 W,
+      drag 120, erg StaticD.
+    bytes: "10 27 00  1E  8C  50  F4 01  64 00  2C 01  C8 00  96 00  78  01  05"
+    expected:
+      elapsed_time_cs: 10000
+      split_interval_avg_stroke_rate: 30
+      split_interval_work_heartrate: 140
+      split_interval_rest_heartrate: 80
+      split_interval_avg_pace_ds: 500
+      split_interval_total_calories: 100
+      split_interval_avg_calories: 300
+      split_interval_speed_mms: 200
+      split_interval_power: 150
+      split_avg_drag_factor: 120
+      split_interval_number: 1
+      erg_machine_type: 5
+
+# ── 0x0039  End of Workout Summary (20 bytes) ─────────────────────────
+end_of_workout_summary:
+  - id: just_row_completion
+    description: >
+      Just Row workout complete: log date 1, log time 2, 100 s / 100 m,
+      30 spm, HR 140 end / 130 avg / 80 min / 170 max, drag 120,
+      HR 100 recovery, Just Row, 50.0 s/500m pace.
+    bytes: "01 00  02 00  10 27 00  E8 03 00  1E  8C  82  50  AA  78  64  02  F4 01"
+    expected:
+      log_entry_date: 1
+      log_entry_time: 2
+      elapsed_time_cs: 10000
+      distance_dm: 1000
+      avg_stroke_rate: 30
+      ending_heartrate: 140
+      avg_heartrate: 130
+      min_heartrate: 80
+      max_heartrate: 170
+      avg_drag_factor: 120
+      recovery_heartrate: 100
+      workout_type: 2
+      avg_pace_ds: 500
+
+# ── 0x003A  End of Workout Additional Summary (19 bytes) ──────────────
+end_of_workout_additional_summary:
+  - id: distance_interval_workout
+    description: >
+      Distance-interval workout: log date 1 / time 2, type distance,
+      1000 m split, 5 intervals, 100 kcal, 200 W, 2000 m rest,
+      60 s rest time, 300 cal/hr avg.
+    bytes: "01 00  02 00  01  E8 03  05  64 00  C8 00  D0 07 00  3C 00  2C 01"
+    expected:
+      log_entry_date: 1
+      log_entry_time: 2
+      split_interval_type: 1
+      split_interval_size: 1000
+      split_interval_count: 5
+      total_calories: 100
+      watts: 200
+      total_rest_distance: 2000
+      interval_rest_time_s: 60
+      avg_calories: 300
+
+# ── 0x003B  Heart Rate Belt Information (6 bytes) ─────────────────────
+heart_rate_belt_info:
+  - id: polar_belt
+    description: >
+      Polar-compatible HR belt: manufacturer 1, device type 2, ID 0x12345678.
+    bytes: "01  02  78 56 34 12"
+    expected:
+      manufacturer_id: 1
+      device_type: 2
+      belt_id: 0x12345678   # 305419896 decimal
+
+# ── 0x003C  End of Workout Additional Summary 2 (10 bytes) ────────────
+end_of_workout_additional_summary_2:
+  - id: game_workout
+    description: >
+      Game workout summary: log date 1 / time 2, 50.0 s/500m avg pace,
+      game ID 3, score 1000, erg StaticD.
+    bytes: "01 00  02 00  F4 01  03  E8 03  05"
+    expected:
+      log_entry_date: 1
+      log_entry_time: 2
+      avg_pace_ds: 500
+      game_identifier: 3
+      game_score: 1000
+      erg_machine_type: 5
+
+# ── 0x003D  Force Curve Data (variable, 2–20 bytes) ───────────────────
+force_curve_data:
+  - id: three_points_packet_1of2
+    description: >
+      First of two notifications carrying a force curve: 3 signed points
+      [100, 200, 300] in sequence 1.
+    bytes: "23  01  64 00  C8 00  2C 01"
+    expected:
+      total_notifications: 2    # high nibble of 0x23
+      point_count: 3            # low nibble of 0x23
+      sequence_number: 1
+      data_points: [100, 200, 300]
+
+  - id: negative_point
+    description: >
+      Single notification with one signed negative data point: -100.
+    bytes: "11  00  9C FF"
+    expected:
+      total_notifications: 1
+      point_count: 1
+      sequence_number: 0
+      data_points: [-100]
+
+# ── 0x003E  Additional Status 3 (12 bytes) ────────────────────────────
+additional_status_3:
+  - id: game_active
+    description: >
+      Active game: operational state 1, verification 2, screen 3,
+      no error, BikeErg calibration zeroed, game ID 4, score 1000.
+    bytes: "01  02  03 00  00 00  00  00  00  04  E8 03"
+    expected:
+      operational_state: 1
+      workout_verification_state: 2
+      screen_number: 3
+      last_error: 0
+      calibration_mode: 0
+      calibration_state: 0
+      calibration_status: 0
+      game_id: 4
+      game_score: 1000
+
+# ── 0x003F  Logged Workout (15 bytes) ─────────────────────────────────
+logged_workout:
+  - id: stored_entry
+    description: >
+      Logged workout entry: hash 0x0807060504030201,
+      log address 0x40302010, size 1000, erg StaticD.
+    bytes: "01 02 03 04 05 06 07 08  10 20 30 40  E8 03  05"
+    expected:
+      workout_hash: 0x0807060504030201    # 578437695752307201 decimal
+      internal_log_address: 0x40302010   # 1076895760 decimal
+      logged_workout_size: 1000
+      erg_model_type: 5

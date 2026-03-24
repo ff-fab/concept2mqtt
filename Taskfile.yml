@@ -19,6 +19,8 @@ vars:
     sh: find {{.PKG}}/tests/unit/ \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -qm1 . && echo true || echo false
   HAS_INTEGRATION_TESTS:
     sh: find {{.PKG}}/tests/integration/ \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -qm1 . && echo true || echo false
+  HAS_PYTHON_SOURCE:
+    sh: find {{.PKG}}/src/{{.MODULE_NAME}} -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -qm1 . && echo true || echo false
 
 tasks:
   default:
@@ -368,6 +370,47 @@ tasks:
     cmds:
       - cargo clippy -p csafe-codec -- -D warnings
 
+  csafe:test:cov:
+    desc: Run Rust tests with coverage (terminal report)
+    cmds:
+      - cargo llvm-cov -p csafe-codec --all-features
+
+  csafe:test:cov:html:
+    desc: Run Rust tests with HTML coverage report
+    cmds:
+      - cargo llvm-cov -p csafe-codec --all-features --html
+      - cmd: '{{if eq OS "darwin"}}open{{else}}xdg-open{{end}} target/llvm-cov/html/index.html'
+        ignore_error: true
+
+  # ===========================================================================
+  # concept2mqtt (c2m:) — Python package aliases
+  # ===========================================================================
+  # These mirror the bare-name tasks scoped explicitly to concept2mqtt.
+
+  c2m:test:
+    desc: Run concept2mqtt unit tests
+    cmds:
+      - task: test:unit
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
+
+  c2m:test:cov:
+    desc: Run concept2mqtt tests with coverage (terminal + XML)
+    cmds:
+      - task: test:cov
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
+
+  c2m:lint:
+    desc: Run concept2mqtt linting (ruff)
+    cmds:
+      - task: lint
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
+
+  c2m:typecheck:
+    desc: Run concept2mqtt type checking (mypy)
+    cmds:
+      - task: typecheck
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
+
   # ===========================================================================
   # CI Helpers
   # ===========================================================================
@@ -390,7 +433,12 @@ tasks:
           exit 0
         fi
         uv run pytest {{.PKG}}/tests/unit/ --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=xml --cov-report=json --cov-report=term --junitxml=results-unit.xml
-        uv run python {{.PKG}}/tests/scripts/summarize_tests.py --coverage-file=coverage.json --fail-under=80
+        FAIL_UNDER=80
+        if [ "{{.HAS_PYTHON_SOURCE}}" != "true" ]; then
+          echo "ℹ No Python source files — disabling coverage gate"
+          FAIL_UNDER=0
+        fi
+        uv run python {{.PKG}}/tests/scripts/summarize_tests.py --coverage-file=coverage.json --fail-under=$FAIL_UNDER
 
   ci:test:integration:
     desc: CI integration tests (pytest)
@@ -402,12 +450,17 @@ tasks:
         fi
         uv run pytest {{.PKG}}/tests/integration/ -v --tb=short -m integration --junitxml=results-integration.xml
 
+  ci:test:rust-coverage:
+    desc: CI Rust test coverage (lcov output for Codecov)
+    cmds:
+      - cargo llvm-cov -p csafe-codec --all-features --lcov --output-path rust-lcov.info
+
   ci:rust:
-    desc: CI Rust checks (fmt + clippy + test + maturin build verify)
+    desc: CI Rust checks (fmt + clippy + coverage + maturin build verify)
     cmds:
       - task: csafe:fmt
       - task: csafe:lint
-      - task: csafe:test
+      - task: ci:test:rust-coverage
       - maturin build --manifest-path packages/csafe-codec/Cargo.toml
 
   ci:lint:

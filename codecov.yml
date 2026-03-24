@@ -3,17 +3,47 @@
 
 coverage:
   status:
-    # Project-level: overall coverage must not drop below 80%
-    # Matches fail_under=80 in pyproject.toml [tool.coverage.report]
+    # Project-level: overall coverage must not drop below target
     project:
       default:
-        target: 80%
+        target: auto
         threshold: 4% # Allow 4% fluctuation before failing
+      rust:
+        target: 80%
+        threshold: 4%
+        flags:
+          - rust
+      python:
+        target: 80%
+        threshold: 4%
+        flags:
+          - python
 
     # Patch-level: new/changed lines in a PR should have reasonable coverage
     patch:
       default:
         target: 50%
+
+flags:
+  rust:
+    paths:
+      - packages/csafe-codec/src/
+    carryforward: true
+  python:
+    paths:
+      - packages/concept2mqtt/src/
+    carryforward: true
+
+component_management:
+  individual_components:
+    - component_id: csafe-codec
+      name: csafe-codec (Rust)
+      paths:
+        - packages/csafe-codec/src/**
+    - component_id: concept2mqtt
+      name: concept2mqtt (Python)
+      paths:
+        - packages/concept2mqtt/src/**
 
 comment:
   layout: 'condensed_header, condensed_files, condensed_footer, components'

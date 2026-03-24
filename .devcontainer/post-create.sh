@@ -165,6 +165,15 @@ uv tool install showboat 2>/dev/null || echo "⚠️  showboat install had issue
 echo "🦀 Installing maturin (Rust→Python build tool)..."
 uv tool install maturin 2>/dev/null || echo "⚠️  maturin install had issues, continuing..."
 
+# Install cargo-llvm-cov — LLVM source-based code coverage for Rust
+echo "📊 Installing cargo-llvm-cov (Rust coverage)..."
+rustup component add llvm-tools-preview 2>/dev/null || echo "⚠️  llvm-tools-preview install had issues, continuing..."
+cargo install cargo-llvm-cov --locked 2>/dev/null || echo "⚠️  cargo-llvm-cov install had issues, continuing..."
+# Symlink into /usr/local/bin for non-interactive shells
+if [ -f "/home/vscode/.cargo/bin/cargo-llvm-cov" ]; then
+    sudo ln -sf "/home/vscode/.cargo/bin/cargo-llvm-cov" "/usr/local/bin/cargo-llvm-cov" 2>/dev/null || true
+fi
+
 # Initialize beads issue tracker if not already done
 cd /workspace
 if [ ! -d ".beads" ]; then

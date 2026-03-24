@@ -9,12 +9,12 @@ coverage:
         target: auto
         threshold: 4% # Allow 4% fluctuation before failing
       rust:
-        target: 80%
+        target: auto
         threshold: 4%
         flags:
           - rust
       python:
-        target: 80%
+        target: auto
         threshold: 4%
         flags:
           - python

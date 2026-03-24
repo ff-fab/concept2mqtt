@@ -391,21 +391,25 @@ tasks:
     desc: Run concept2mqtt unit tests
     cmds:
       - task: test:unit
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   c2m:test:cov:
     desc: Run concept2mqtt tests with coverage (terminal + XML)
     cmds:
       - task: test:cov
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   c2m:lint:
     desc: Run concept2mqtt linting (ruff)
     cmds:
       - task: lint
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   c2m:typecheck:
     desc: Run concept2mqtt type checking (mypy)
     cmds:
       - task: typecheck
+        vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   # ===========================================================================
   # CI Helpers
@@ -452,11 +456,11 @@ tasks:
       - cargo llvm-cov -p csafe-codec --all-features --lcov --output-path rust-lcov.info
 
   ci:rust:
-    desc: CI Rust checks (fmt + clippy + test + maturin build verify)
+    desc: CI Rust checks (fmt + clippy + coverage + maturin build verify)
     cmds:
       - task: csafe:fmt
       - task: csafe:lint
-      - task: csafe:test
+      - task: ci:test:rust-coverage
       - maturin build --manifest-path packages/csafe-codec/Cargo.toml
 
   ci:lint:

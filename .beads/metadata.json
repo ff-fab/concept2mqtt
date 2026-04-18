@@ -2,6 +2,6 @@
   "database": "dolt",
   "backend": "dolt",
   "dolt_mode": "server",
-  "dolt_database": "workspace",
+  "dolt_database": "c2m",
   "project_id": "48129c34-42d0-435d-93f6-4fef7820c308"
 }

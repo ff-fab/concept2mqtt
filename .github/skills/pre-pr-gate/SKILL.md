@@ -62,13 +62,13 @@ If there are tasks to close:
 
 ```bash
 bd close <id>        # for each completed task
-bd export
+task beads:sync      # export DB state to .beads/issues.jsonl
 git add .beads/ && git commit -m "chore: update beads state"
 ```
 
-If there are no completed tasks to close, still run `bd export` and check
-whether `.beads/` has any uncommitted changes (the user may have modified
-state manually). Commit them if so.
+If there are no completed tasks to close, check whether `.beads/` has any
+uncommitted changes (the user may have modified state manually). Commit
+them if so.
 
 ## Step 4 — Push
 

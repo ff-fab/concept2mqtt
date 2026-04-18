@@ -1,9 +1,9 @@
 #!/bin/bash
 # Update pre-commit hooks to their latest versions
-# Run this periodically to keep linting tools (ruff, mypy, etc.) current
+# Run this periodically to keep linting tools (ruff, ty, etc.) current
 
 set -e
-cd /workspace
+cd /workspaces/concept2mqtt
 
 if [ ! -f ".pre-commit-config.yaml" ]; then
     echo "❌ No .pre-commit-config.yaml found in workspace root"

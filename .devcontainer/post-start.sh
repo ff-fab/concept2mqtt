@@ -2,7 +2,7 @@
 # Post-start hook: cleans stale beads daemon artifacts on every container start.
 set -euo pipefail
 
-cd /workspace
+cd /workspaces/concept2mqtt
 
 if ! command -v bd >/dev/null 2>&1; then
     echo "⚠️  bd not found on PATH; skipping beads startup cleanup"

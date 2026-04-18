@@ -179,10 +179,8 @@ venv.bak/
 # zensical documentation
 /site
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# ty (type checker)
+.ty_cache/
 
 # Pyre type checker
 .pyre/
@@ -237,8 +235,4 @@ __marimo__/
 .beads/dolt/dolt-server.activity
 .beads/dolt/dolt-server.log
 .beads/dolt/dolt-monitor.pid
-.beads/dolt/dolt-monitor.pid.lock
-
-# Dolt database files (added by bd init)
-.dolt/
-*.db
+.beads/dolt-monitor.pid

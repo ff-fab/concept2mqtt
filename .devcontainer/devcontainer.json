@@ -1,10 +1,11 @@
 {
   "name": "concept2mqtt",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "cacheFrom": "ghcr.io/ff-fab/concept2mqtt-devcontainer"
   },
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/concept2mqtt",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/concept2mqtt,type=bind,consistency=cached",
 
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
@@ -16,7 +17,7 @@
   },
 
   "remoteEnv": {
-    "PATH": "/home/vscode/.cargo/bin:/home/vscode/.local/bin:/workspace/.venv/bin:${containerEnv:PATH}",
+    "PATH": "/home/vscode/.cargo/bin:/home/vscode/.local/bin:/workspaces/concept2mqtt/.venv/bin:${containerEnv:PATH}",
     "UV_LINK_MODE": "copy",
     "GH_PAGER": "cat",
     "CONTEXT7_API_KEY": "${localEnv:CONTEXT7_API_KEY}"
@@ -26,7 +27,7 @@
     "vscode": {
       "settings": {
         // Python interpreter in container
-        "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+        "python.defaultInterpreterPath": "/workspaces/concept2mqtt/.venv/bin/python",
         "python.terminal.activateEnvironment": true,
 
         // Line length: 88 characters (matches Prettier, Ruff, and Black conventions)
@@ -100,7 +101,7 @@
         // Python linting
         "python.linting.enabled": true,
         "python.linting.pylintEnabled": false,
-        "python.linting.mypyEnabled": true,
+        "python.linting.mypyEnabled": false,
         "python.analysis.typeCheckingMode": "strict",
         "python.analysis.extraPaths": ["packages/concept2mqtt/src"],
 
@@ -136,7 +137,7 @@
           "**/node_modules": true,
           "**/dist": true,
           "**/.venv": true,
-          "**/.mypy_cache": true,
+          "**/.ty_cache": true,
           "**/build": true,
           "**/target": true
         },
@@ -154,35 +155,56 @@
         "github.gitAuthentication": true,
         "githubPullRequests.remotes": ["concept2mqtt", "origin", "upstream"],
 
-        // Beads: daemon was removed in bd ≥0.50; all ops use direct mode now
-        "beads.autoStartDaemon": false,
+        // Jinja template file associations — gives Jinja + host-language
+        // dual syntax highlighting (requires samuelcolvin.jinjahtml extension)
+        "files.associations": {
+          "Dockerfile.jinja": "jinja-dockerfile",
+          "*.sh.jinja": "jinja-shell",
+          "*.toml.jinja": "jinja-toml",
+          "*.json.jinja": "jinja-json",
+          "*.yml.jinja": "jinja-yaml",
+          "*.md.jinja": "jinja-md"
+        },
+
+        // Beads (bd) issue tracker — auto-start daemon on container open
+        "beads.autoStartDaemon": true,
 
         // Window title
         "window.title": "concept2mqtt [devcontainer]"
+
+        // Optional: theme colour customisations (uncomment to use)
+        // "workbench.colorCustomizations": {
+        //   "activityBar.background": "#1e1e2e",
+        //   "statusBar.background": "#1e1e2e",
+        //   "titleBar.activeBackground": "#1e1e2e"
+        // }
       },
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
         "tamasfe.even-better-toml",
+        "samuelcolvin.jinjahtml",
 
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
+        "GitHub.copilot",
         "GitHub.copilot-chat",
         "anthropic.claude-code",
         "vivaxy.vscode-conventional-commits",
         "ryanluker.vscode-coverage-gutters",
         "task.vscode-task",
         "planet57.vscode-beads",
+        "fail-safe.copilot-premium-usage-monitor",
         "github.vscode-pull-request-github",
         "rust-lang.rust-analyzer"
       ]
     }
   },
 
-  "postCreateCommand": "/workspace/.devcontainer/post-create.sh",
-  "postStartCommand": "/workspace/.devcontainer/post-start.sh",
+  "postCreateCommand": "/workspaces/concept2mqtt/.devcontainer/post-create.sh",
+  "postStartCommand": "/workspaces/concept2mqtt/.devcontainer/post-start.sh",
 
   "remoteUser": "vscode"
 }

@@ -1,11 +1,13 @@
-_commit: v1.7.1
+_commit: v1.16.0
 _src_path: https://github.com/ff-fab/tmpl_python_project_kickstart
 author_email: mail@fabiankoerner.com
 author_name: Fabian Koerner
+beads_prefix: con
 codecov: true
 coverage_threshold: 80
 description: Connect a concept2 rowing machine's PM5 to MQTT, e.g. for connection
   to a smart home.
+docker_publish: false
 docs_style: dita
 github_org: ff-fab
 include_sbom: true
@@ -16,3 +18,4 @@ project_name: concept2mqtt
 release_please: true
 repo_name: concept2mqtt
 robot_framework: false
+surge_token: false

@@ -5,9 +5,7 @@ applyTo: 'packages/concept2mqtt/tests/**/*.py'
 
 # Testing Instructions
 
-> **New Test Files:** Use
-> [Test File Template](../../docs/testing/test-file-template.md) — copy-paste
-> starting point with all conventions pre-applied.
+> **New Test Files:** Use [Test File Template](../../docs/testing/test-file-template.md) — copy-paste starting point with all conventions pre-applied.
 
 ## Test Strategy
 
@@ -18,9 +16,7 @@ applyTo: 'packages/concept2mqtt/tests/**/*.py'
 
 ## Test Technique Documentation
 
-**Every test must document the test design technique(s) used.** This ensures
-traceability to ISTQB principles and helps reviewers understand why specific test cases
-were chosen.
+**Every test must document the test design technique(s) used.** Ensures traceability to ISTQB principles and helps reviewers understand why specific test cases were chosen.
 
 ### Module-Level Docstring
 
@@ -65,7 +61,7 @@ def test_frozen_immutability(self) -> None:
 
 ### AAA Pattern
 
-Follow the Arrange-Act-Assert pattern:
+Follow Arrange-Act-Assert:
 
 ```python
 def test_parse_value_extracts_unit():

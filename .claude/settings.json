@@ -1,6 +1,9 @@
 {
   "permissions": {
     "allow": [
+      "Skill(pre-pr-gate)",
+      "Skill(pre-pr-gate:*)",
+      "Skill(pr-review)",
       "Read",
       "Edit",
       "Write",

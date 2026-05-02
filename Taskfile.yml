@@ -451,10 +451,6 @@ tasks:
         vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   # ===========================================================================
-  # CI Helpers
-  # ===========================================================================
-
-  # ===========================================================================
   # PR Helpers
   # ===========================================================================
 
@@ -468,6 +464,17 @@ tasks:
             (.author.login != "app/github-actions" or (.headRefName | test("release-please|please-release") | not))
           )'
 
+  pr:create:
+    desc: 'Create a PR. Pass TITLE and BODY as task vars (not CLI args).'
+    preconditions:
+      - sh: '[ -n "{{.TITLE}}" ]'
+        msg: 'Usage: task pr:create TITLE="feat: title" BODY="## Summary ..."'
+    env:
+      PR_TITLE: '{{.TITLE}}'
+      PR_BODY: '{{.BODY}}'
+    cmds:
+      - gh pr create --title "$PR_TITLE" --body "$PR_BODY"
+
   pr:diff:
     desc: 'Show PR diff (e.g.: task pr:diff -- 42, or task pr:diff -- 42 --name-only)'
     preconditions:
@@ -477,12 +484,14 @@ tasks:
       - gh pr diff {{.CLI_ARGS}}
 
   pr:feedback:
-    desc: 'Fetch all PR feedback as JSON (e.g.: task pr:feedback -- 42)'
-    preconditions:
-      - sh: '[ -n "{{.CLI_ARGS}}" ]'
-        msg: 'Usage: task pr:feedback -- <pr-number>'
+    desc: 'Fetch all PR feedback as JSON (e.g.: task pr:feedback -- 42, or task pr:feedback to auto-detect from current branch)'
+    # Output schema: .github/skills/pr-review/feedback-schema.json
     cmds:
       - bash .github/skills/pr-review/fetch-pr-feedback.sh {{.CLI_ARGS}}
+
+  # ===========================================================================
+  # CI Helpers
+  # ===========================================================================
 
   ci:wait:
     desc: 'Wait for CI checks to pass on a PR (e.g.: task ci:wait -- 5)'

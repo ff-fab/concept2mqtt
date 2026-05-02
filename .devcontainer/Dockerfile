@@ -121,6 +121,29 @@ RUN set -eux; \
     fi; \
     bd version
 
+# Install opencode (AI coding agent — https://opencode.ai)
+# renovate: datasource=github-releases depName=anomalyco/opencode
+ARG OPENCODE_VERSION=v1.14.25
+# SHA-256 digests for supply-chain integrity verification (update on version bump)
+ARG OPENCODE_SHA256_AMD64=6542db973fbf404707d275d824fcd7eef20a8003788114eb85067402daf730db
+ARG OPENCODE_SHA256_ARM64=0cee21589d4936619bcd6131342121c0d20ef245fbec314009c89b3f9338348d
+RUN set -eux; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+      amd64) ARCH_NAME='x64';   EXPECTED_SHA="${OPENCODE_SHA256_AMD64}" ;; \
+      arm64) ARCH_NAME='arm64'; EXPECTED_SHA="${OPENCODE_SHA256_ARM64}" ;; \
+      *) echo "Unsupported architecture: ${ARCH}" >&2; exit 1 ;; \
+    esac; \
+    TARBALL="/tmp/opencode-linux-${ARCH_NAME}.tar.gz"; \
+    curl -fsSL \
+      "https://github.com/anomalyco/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-${ARCH_NAME}.tar.gz" \
+      -o "${TARBALL}"; \
+    echo "${EXPECTED_SHA}  ${TARBALL}" | sha256sum -c -; \
+    tar -xzf "${TARBALL}" -C /tmp opencode; \
+    install -m 755 /tmp/opencode /usr/local/bin/opencode; \
+    rm -f /tmp/opencode "${TARBALL}"; \
+    opencode --version
+
 # Configure uv to use project-local virtual environments
 ENV UV_PROJECT_ENVIRONMENT="/workspaces/concept2mqtt/.venv"
 
@@ -130,4 +153,4 @@ RUN mkdir -p /home/vscode/.vscode-server /home/vscode/.vscode-server/extensions 
     && chown -R vscode:vscode /home/vscode/.vscode-server
 
 # Verify installations
-RUN uv --version && python --version && task --version && fzf --version && dolt version && bd version && syft --version
+RUN uv --version && python --version && task --version && fzf --version && dolt version && bd version && opencode --version && syft --version

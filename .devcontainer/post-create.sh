@@ -106,7 +106,7 @@ fi
 cd /workspaces/concept2mqtt
 if [ ! -d ".beads" ]; then
     echo "🔮 Initializing beads issue tracker..."
-    bd init --quiet --skip-hooks --prefix "con"
+    bd init --quiet --skip-hooks --server --prefix "con"
     echo "✅ Beads initialized"
 else
     echo "✅ Beads already initialized"
@@ -126,6 +126,8 @@ echo "✅ SSH known_hosts seeded (agent forwarding handles authentication)"
 # gh defaults to $PAGER (=less) when its own pager config is blank.
 # GH_PAGER=cat is set via remoteEnv, but gh config persists across shell sessions.
 gh config set pager cat 2>/dev/null || true
+
+
 
 # GitHub CLI authentication reminder
 echo ""

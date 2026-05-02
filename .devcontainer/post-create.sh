@@ -19,7 +19,7 @@ if [ -d "/home/vscode/.cargo/bin" ]; then
 fi
 
 ensure_git_repo() {
-    local repo_root="/workspace"
+    local repo_root="/workspaces/concept2mqtt"
 
     if ! command -v git >/dev/null 2>&1; then
         echo "❌ git is required but not installed."
@@ -39,86 +39,9 @@ ensure_git_repo() {
 
 echo "🏠 Setting up concept2mqtt development environment..."
 
-# Install dolt — versioned SQL database used by beads (bd) as its backing store.
-# Installed at runtime (not in Dockerfile) to avoid Docker layer cache staleness
-# and to support retry logic for network flakiness.
-install_dolt() {
-    local attempts=3
-    local n=1
-    while [ "$n" -le "$attempts" ]; do
-        if curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh | sudo bash; then
-            return 0
-        fi
-        echo "⚠️  dolt install attempt ${n}/${attempts} failed"
-        n=$((n + 1))
-        sleep 2
-    done
-    return 1
-}
-
-echo "🗃️  Installing/updating dolt (beads database backend)..."
-if install_dolt; then
-    hash -r
-    echo "✅ dolt $(dolt version 2>/dev/null | head -1)"
-else
-    echo "❌ Failed to install dolt after multiple attempts"
-    exit 1
-fi
-
-# Install beads (bd) — git-backed issue tracker for AI agents
-# Installed at runtime (not in Dockerfile) to avoid Docker layer cache staleness
-# and to support retry logic for network flakiness.
-#
-# We download the binary directly instead of piping the upstream install.sh to
-# bash, because that script's WSL-detection echo statements leak into command
-# substitutions and corrupt the download URL (stdout pollution bug).
-install_bd() {
-    # Ensure fallback install directory exists (CI may not have ~/.local/bin)
-    mkdir -p "$HOME/.local/bin"
-    local attempts=3
-    local n=1
-    local arch
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64)  arch="amd64" ;;
-        aarch64) arch="arm64" ;;
-    esac
-    # Resolve latest version tag from GitHub redirect
-    local latest_url
-    latest_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-        https://github.com/steveyegge/beads/releases/latest)"
-    local version="${latest_url##*/}"          # e.g. "v0.60.0"
-    local ver_no_v="${version#v}"              # e.g. "0.60.0"
-    local tarball="beads_${ver_no_v}_linux_${arch}.tar.gz"
-    local url="https://github.com/steveyegge/beads/releases/download/${version}/${tarball}"
-
-    while [ "$n" -le "$attempts" ]; do
-        if curl -fsSL "$url" -o "/tmp/${tarball}" \
-            && tar -xzf "/tmp/${tarball}" -C /tmp \
-            && { install -m 755 /tmp/bd /usr/local/bin/bd 2>/dev/null \
-                || install -m 755 /tmp/bd "$HOME/.local/bin/bd"; }; then
-            rm -f "/tmp/${tarball}" /tmp/bd
-            return 0
-        fi
-        echo "⚠️  bd install attempt ${n}/${attempts} failed"
-        n=$((n + 1))
-        sleep 2
-    done
-    return 1
-}
-
-echo "🔮 Installing/updating beads CLI..."
-if install_bd; then
-    hash -r
-    echo "✅ $(bd --version)"
-else
-    echo "❌ Failed to install bd after multiple attempts"
-    exit 1
-fi
-
 # Python setup
 echo "📦 Setting up Python..."
-cd /workspace
+cd /workspaces/concept2mqtt
 
 # Check if venv exists but has broken symlinks (stale uv cache)
 if [ -d ".venv" ]; then
@@ -128,7 +51,7 @@ if [ -d ".venv" ]; then
     fi
 fi
 
-uv sync --all-groups
+uv sync --all-groups --all-extras
 echo "✅ Python dependencies installed"
 
 # Ensure git is available before git-dependent setup steps.
@@ -136,21 +59,20 @@ ensure_git_repo
 
 # Generate version from git tags (setuptools_scm)
 echo "📌 Updating version from git tags..."
-cd /workspace
-uv run --group dev python /workspace/scripts/update_version.py || echo "⚠️  Could not update version (git tags may not be available in this checkout)"
+cd /workspaces/concept2mqtt
+uv run --group dev python /workspaces/concept2mqtt/scripts/update_version.py || echo "⚠️  Could not update version (git tags may not be available in this checkout)"
 
 # Install pre-commit hooks (if configured)
-cd /workspace
+cd /workspaces/concept2mqtt
 if [ -f ".pre-commit-config.yaml" ]; then
-    echo "🪝 Installing pre-commit hooks..."
-    # Run pre-commit from the repository root (where .pre-commit-config.yaml is)
-    if uv run --group dev pre-commit install --install-hooks; then
-        echo "✅ Pre-commit hooks installed successfully"
+    echo "🪝 Installing pre-commit hook environments..."
+    # Beads owns core.hooksPath (.beads/hooks/) and chains to pre-commit there,
+    # so we only need to download hook environments — not install git shims.
+    if uv run --group dev pre-commit install-hooks; then
+        echo "✅ Pre-commit hook environments installed successfully"
     else
-        echo "⚠️  pre-commit install had issues, but continuing..."
+        echo "⚠️  pre-commit install-hooks had issues, but continuing..."
     fi
-    # Install additional hook stages for beads (bd) sync
-    uv run --group dev pre-commit install --hook-type pre-push --hook-type post-merge 2>/dev/null || true
 fi
 
 # Install beads MCP server for Copilot integration (Python-based)
@@ -174,11 +96,17 @@ if [ -f "/home/vscode/.cargo/bin/cargo-llvm-cov" ]; then
     sudo ln -sf "/home/vscode/.cargo/bin/cargo-llvm-cov" "/usr/local/bin/cargo-llvm-cov" 2>/dev/null || true
 fi
 
+# Ensure beads.role is set BEFORE init so bd doesn't prompt for sole-maintainer
+if ! git config beads.role >/dev/null 2>&1; then
+    git config beads.role maintainer
+    echo "✅ Set beads.role = maintainer"
+fi
+
 # Initialize beads issue tracker if not already done
-cd /workspace
+cd /workspaces/concept2mqtt
 if [ ! -d ".beads" ]; then
     echo "🔮 Initializing beads issue tracker..."
-    bd init --quiet --skip-hooks
+    bd init --quiet --skip-hooks --server --prefix "con"
     echo "✅ Beads initialized"
 else
     echo "✅ Beads already initialized"
@@ -198,6 +126,8 @@ echo "✅ SSH known_hosts seeded (agent forwarding handles authentication)"
 # gh defaults to $PAGER (=less) when its own pager config is blank.
 # GH_PAGER=cat is set via remoteEnv, but gh config persists across shell sessions.
 gh config set pager cat 2>/dev/null || true
+
+
 
 # GitHub CLI authentication reminder
 echo ""

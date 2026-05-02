@@ -1,6 +1,0 @@
-{
-  "extraPaths": ["packages/concept2mqtt/src"],
-  "venvPath": ".",
-  "venv": ".venv",
-  "pythonVersion": "3.13"
-}

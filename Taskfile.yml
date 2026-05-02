@@ -143,6 +143,24 @@ tasks:
         bd show "$TASK_ID"
 
   # ===========================================================================
+  # Beads Sync — Export Dolt DB state to git-tracked JSONL
+  # ===========================================================================
+  # bd close updates the local Dolt DB but does NOT update .beads/issues.jsonl.
+  # Always run this task after closing beads tasks and before committing.
+
+  beads:sync:
+    desc: Export beads DB to .beads/issues.jsonl (run after bd close)
+    silent: true
+    preconditions:
+      - sh: command -v bd >/dev/null 2>&1
+        msg: bd is not installed
+      - sh: test -d .beads
+        msg: .beads/ directory not found
+    cmds:
+      - bd export -o .beads/issues.jsonl
+      - echo "✓ Exported beads state to .beads/issues.jsonl"
+
+  # ===========================================================================
   # Test Tasks - Top Level
   # ===========================================================================
 
@@ -231,9 +249,9 @@ tasks:
       - uv run ruff format {{.PKG}}/src/ {{.PKG}}/tests/
 
   typecheck:
-    desc: Run type checking (mypy)
+    desc: Run type checking (ty)
     cmds:
-      - uv run mypy {{.PKG}}/src/
+      - uv run ty check {{.PKG}}/src/
 
   check:
     desc: Run all checks (lint + typecheck + test + Rust)
@@ -245,6 +263,11 @@ tasks:
       - task: csafe:lint
       - task: csafe:test
       - task: csafe:test:python
+
+  quality:summary:
+    desc: Run lint, typecheck, and unit tests, then output a JSON summary
+    cmds:
+      - bash scripts/quality-summary.sh
 
   pre-pr:
     desc: Run all pre-PR quality gates (pre-commit + lint + typecheck + tests + coverage + complexity + similarity)
@@ -273,6 +296,11 @@ tasks:
     desc: Build documentation site (clean output)
     cmds:
       - uv run --group docs zensical build --clean
+
+  adr:create:
+    desc: Create or amend an ADR from a validated JSON input file
+    cmds:
+      - uv run scripts/render_adr.py {{.CLI_ARGS}}
 
   # ===========================================================================
   # Dependency Management
@@ -303,18 +331,29 @@ tasks:
   # ===========================================================================
 
   complexity:
-    desc: Check code complexity (radon + cognitive complexity)
+    desc: Check all code complexity gates (cyclomatic + cognitive + duplication/similarity)
+    cmds:
+      - task: complexity:cyclomatic
+      - task: complexity:cognitive
+      - task: similarity
+
+  complexity:cyclomatic:
+    desc: Check cyclomatic complexity (radon + xenon)
     cmds:
       - uv run radon cc {{.PKG}}/src/{{.MODULE_NAME}} --average --show-complexity
       - uv run xenon {{.PKG}}/src/{{.MODULE_NAME}} --max-absolute B --max-modules A --max-average A
-      - uv run flake8 --select CCR001 --max-cognitive-complexity 15 {{.PKG}}/src/{{.MODULE_NAME}}
+
+  complexity:cognitive:
+    desc: Check cognitive complexity (flake8-cognitive-complexity, max 15)
+    cmds:
+      - uv run flake8 --select=CCR001 {{.PKG}}/src/{{.MODULE_NAME}}/
 
   similarity:
     desc: Check for code duplication (symilar — ships with pylint)
     cmds:
       - |
-        OUTPUT=$(uv run symilar -d 4 --ignore-imports --ignore-signatures \
-          $(find {{.PKG}}/src/{{.MODULE_NAME}} -name '*.py'))
+        OUTPUT=$(find {{.PKG}}/src/{{.MODULE_NAME}} -name '*.py' -print0 \
+          | xargs -0 -x uv run symilar -d 4 --ignore-imports --ignore-signatures)
         echo "$OUTPUT"
         DUPES=$(printf '%s\n' "$OUTPUT" | sed -n 's/.*duplicates=\([0-9][0-9]*\).*/\1/p' | head -n1)
         if [ "${DUPES:-0}" -gt 0 ]; then
@@ -412,6 +451,45 @@ tasks:
         vars: { PKG: packages/concept2mqtt, MODULE_NAME: concept2mqtt }
 
   # ===========================================================================
+  # PR Helpers
+  # ===========================================================================
+
+  pr:list:
+    desc: 'List open PRs excluding release-please (e.g.: task pr:list)'
+    cmds:
+      - |
+        gh pr list --state open --json number,title,author,headRefName \
+          --jq '.[] | select(
+            (.author.login | test("please-release|release-please") | not) and
+            (.author.login != "app/github-actions" or (.headRefName | test("release-please|please-release") | not))
+          )'
+
+  pr:create:
+    desc: 'Create a PR. Pass TITLE and BODY as task vars (not CLI args).'
+    preconditions:
+      - sh: '[ -n "{{.TITLE}}" ]'
+        msg: 'Usage: task pr:create TITLE="feat: title" BODY="## Summary ..."'
+    env:
+      PR_TITLE: '{{.TITLE}}'
+      PR_BODY: '{{.BODY}}'
+    cmds:
+      - gh pr create --title "$PR_TITLE" --body "$PR_BODY"
+
+  pr:diff:
+    desc: 'Show PR diff (e.g.: task pr:diff -- 42, or task pr:diff -- 42 --name-only)'
+    preconditions:
+      - sh: '[ -n "{{.CLI_ARGS}}" ]'
+        msg: 'Usage: task pr:diff -- <pr-number> [--name-only]'
+    cmds:
+      - gh pr diff {{.CLI_ARGS}}
+
+  pr:feedback:
+    desc: 'Fetch all PR feedback as JSON (e.g.: task pr:feedback -- 42, or task pr:feedback to auto-detect from current branch)'
+    # Output schema: .github/skills/pr-review/feedback-schema.json
+    cmds:
+      - bash .github/skills/pr-review/fetch-pr-feedback.sh {{.CLI_ARGS}}
+
+  # ===========================================================================
   # CI Helpers
   # ===========================================================================
 
@@ -468,4 +546,4 @@ tasks:
     cmds:
       - uv run ruff check {{.PKG}}/src/ {{.PKG}}/tests/
       - uv run ruff format --check {{.PKG}}/src/ {{.PKG}}/tests/
-      - uv run mypy {{.PKG}}/src/
+      - uv run ty check {{.PKG}}/src/

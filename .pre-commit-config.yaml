@@ -5,7 +5,7 @@
 repos:
   # EditorConfig: Validate all files match .editorconfig settings
   - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
-    rev: 3.2.1
+    rev: 3.6.1
     hooks:
       - id: editorconfig-checker
         name: EditorConfig (whitespace & encoding)
@@ -34,7 +34,7 @@ repos:
 
   # Codespell: Catch common misspellings across the entire repo
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell
         name: Codespell (spell check)
@@ -70,7 +70,7 @@ repos:
 
   # Ruff: Lint and format Python
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
+    rev: v0.15.9
     hooks:
       - id: ruff
         name: Ruff (lint Python)
@@ -78,27 +78,25 @@ repos:
       - id: ruff-format
         name: Ruff (format Python)
 
-  # mypy: Type checking for Python
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  # ty: Type checking for Python (Astral)
+  # Config lives in [tool.ty] in pyproject.toml.
+  - repo: local
     hooks:
-      - id: mypy
-        name: mypy (type check Python)
-        args: ['--strict']
-        files: ^packages/concept2mqtt/src/
-        additional_dependencies:
-          - pydantic>=2.10.0
-          - pydantic-settings>=2.6.0
-          - types-PyYAML>=6.0.0
+      - id: ty
+        name: ty (type check Python)
+        entry: uv run ty check
+        language: system
+        types: [python]
+        pass_filenames: false
 
-  # Beads (bd): Sync issue tracker JSONL with git
+  # Beads (bd): Guard pushes and keep git in sync
   # pre-push: FAILS if .beads/ has uncommitted changes (forces commit-before-push)
   # post-merge: imports changes from upstream after git pull
   - repo: local
     hooks:
-      - id: bd-sync-pre-push
-        name: Beads sync (pre-push)
-        entry: bash -c 'if [ ! -d .beads ] || ! command -v bd >/dev/null 2>&1; then exit 0; fi; bd sync 2>/dev/null; if [ -n "$(git status --porcelain -- .beads/*.jsonl 2>/dev/null)" ]; then echo "Uncommitted beads changes detected. Run git add .beads/ && git commit before pushing."; exit 1; fi'
+      - id: bd-check-pre-push
+        name: Beads state check (pre-push)
+        entry: bash -c 'if [ ! -d .beads ] || ! command -v bd >/dev/null 2>&1; then exit 0; fi; if [ -n "$(git status --porcelain -- .beads/ 2>/dev/null)" ]; then echo "Uncommitted beads changes detected. Run git add .beads/ && git commit before pushing."; exit 1; fi'
         language: system
         always_run: true
         pass_filenames: false

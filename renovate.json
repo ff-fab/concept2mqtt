@@ -2,46 +2,36 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
-  "schedule": ["before 9am on monday"],
   "timezone": "Europe/Berlin",
+  "schedule": ["before 9am on monday"],
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
+  "dependencyDashboard": true,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
   "packageRules": [
     {
-      "description": "Group all Python minor+patch updates",
       "matchManagers": ["uv"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "python-deps",
-      "automerge": true
+      "groupName": "python-deps"
     },
     {
-      "description": "Group all pre-commit hook updates",
       "matchManagers": ["pre-commit"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "pre-commit-hooks",
-      "automerge": true
+      "groupName": "pre-commit-hooks"
     },
     {
-      "description": "Group all GitHub Actions minor+patch updates",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "github-actions",
-      "automerge": true
+      "groupName": "github-actions"
     },
     {
-      "description": "Major version bumps get individual PRs (may need code changes)",
-      "matchUpdateTypes": ["major"],
-      "automerge": false
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "dockerfile-digests"
     }
   ],
-  "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": false,
-    "schedule": ["before 9am on monday"]
-  },
-  "vulnerabilityAlerts": {
-    "enabled": true,
-    "schedule": ["at any time"]
-  }
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 9am on monday"] },
+  "vulnerabilityAlerts": { "enabled": true, "schedule": ["at any time"] }
 }

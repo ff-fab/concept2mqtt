@@ -11,8 +11,7 @@ def main() -> int:
         print("setuptools_scm not found. Install with: uv sync --group dev")
         return 1
 
-    # Use absolute path for workspace root
-    workspace_root = Path("/workspaces/concept2mqtt")
+    workspace_root = Path(__file__).resolve().parent.parent
     ver = setuptools_scm.get_version(root=workspace_root, fallback_version="0.0.0")
     version_file = (
         workspace_root

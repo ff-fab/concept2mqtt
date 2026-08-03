@@ -2,7 +2,14 @@
   "name": "concept2mqtt",
   "build": {
     "dockerfile": "Dockerfile",
-    "cacheFrom": "ghcr.io/ff-fab/concept2mqtt-devcontainer"
+    "cacheFrom": "ghcr.io/ff-fab/concept2mqtt-devcontainer",
+    "args": {
+      // Local/interactive builds (VS Code, `devcontainer up`, ...) install
+      // Claude Code by default. CI's devcontainer-build workflows set
+      // INSTALL_CLAUDE_CODE=false in the runner environment before invoking
+      // the devcontainer CLI, since CI never needs the `claude` binary.
+      "INSTALL_CLAUDE_CODE": "${localEnv:INSTALL_CLAUDE_CODE:true}"
+    }
   },
   "workspaceFolder": "/workspaces/concept2mqtt",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/concept2mqtt,type=bind,consistency=cached",

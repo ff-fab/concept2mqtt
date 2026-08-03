@@ -5,16 +5,8 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'LICENSE'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'LICENSE'
 
 # Cancel in-progress runs for the same branch/PR — avoids wasting CI minutes
 # on superseded commits when you push twice quickly.
@@ -26,59 +18,81 @@ permissions:
   contents: read
   packages: read # Pull the devcontainer image from GHCR
 
-env:
-  DEVCONTAINER_IMAGE: ghcr.io/ff-fab/concept2mqtt-devcontainer
-
 jobs:
+  # Detect which files changed so docs-only PRs skip heavy CI jobs while
+  # still reporting the required check names (avoids the paths-ignore +
+  # required-checks deadlock — see GitHub docs on "Handling skipped but
+  # required checks").
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      src: ${{ steps.decide.outputs.src }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        id: filter
+        with:
+          filters: |
+            src:
+              - '**'
+              - '!docs/**'
+              - '!overrides/**'
+              - '!**/*.md'
+              - '!LICENSE'
+              - '!zensical.toml'
+
+      # Release-please bot PRs only bump version metadata — CI already ran on
+      # main at merge time. Skip all heavy jobs; ci-gate still runs and passes
+      # (skipped dependents are not failures) to satisfy the required check.
+      - name: Decide if source checks are needed
+        id: decide
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
+        run: |
+          if [[ "$HEAD_REF" == release-please--* ]]; then
+            echo "src=false" >> "$GITHUB_OUTPUT"
+            echo "Release-please PR — skipping heavy CI (already ran on main)"
+          else
+            echo "src=$SRC_CHANGED" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: 'Lint & Type Check'
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Prepare runner for devcontainer
-        run: mkdir -p ~/.ssh # devcontainer.json mounts ~/.ssh; runners lack it
-
-      - name: Log in to GHCR (for devcontainer cache)
-        uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run linting inside devcontainer
-        uses: devcontainers/ci@v0.3
+          persist-credentials: false
+      - uses: ./.github/actions/devcontainer-run
         with:
-          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}
-          push: never
-          runCmd: task ci:lint
+          run-cmd: task ci:lint
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   unit-tests:
     name: 'Unit Tests & Coverage'
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Prepare runner for devcontainer
-        run: mkdir -p ~/.ssh
-
-      - name: Log in to GHCR (for devcontainer cache)
-        uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run unit tests inside devcontainer
-        uses: devcontainers/ci@v0.3
+          persist-credentials: false
+      - uses: ./.github/actions/devcontainer-run
         with:
-          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}
-          push: never
-          runCmd: task ci:test:unit
+          run-cmd: task ci:test:unit
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Python coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.xml
           flags: python
@@ -87,7 +101,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-reports
           path: |
@@ -97,30 +111,22 @@ jobs:
 
   rust:
     name: 'Rust Checks (fmt + clippy + test + coverage)'
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Prepare runner for devcontainer
-        run: mkdir -p ~/.ssh
-
-      - name: Log in to GHCR (for devcontainer cache)
-        uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run Rust checks inside devcontainer
-        uses: devcontainers/ci@v0.3
+          persist-credentials: false
+      - uses: ./.github/actions/devcontainer-run
         with:
-          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}
-          push: never
-          runCmd: task ci:rust
+          run-cmd: task ci:rust
+          token: ${{ secrets.GITHUB_TOKEN }}
+          cargo-cache: 'true'
 
       - name: Upload Rust coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: rust-lcov.info
           flags: rust
@@ -129,7 +135,7 @@ jobs:
 
       - name: Upload Rust coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rust-coverage-reports
           path: rust-lcov.info
@@ -137,25 +143,56 @@ jobs:
 
   complexity:
     name: 'Code Quality (Complexity & Similarity)'
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Prepare runner for devcontainer
-        run: mkdir -p ~/.ssh
-
-      - name: Log in to GHCR (for devcontainer cache)
-        uses: docker/login-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run quality checks inside devcontainer
-        uses: devcontainers/ci@v0.3
+          persist-credentials: false
+      - uses: ./.github/actions/devcontainer-run
         with:
-          cacheFrom: ${{ env.DEVCONTAINER_IMAGE }}
-          push: never
-          runCmd: |
-            task complexity
-            task similarity
+          run-cmd: task complexity
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  security:
+    name: Security Audit
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/devcontainer-run
+        with:
+          run-cmd: task security:audit
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── CI Gate ────────────────────────────────────────────────────────────
+  # Single required status check for GitHub rulesets. Aggregates all quality
+  # sub-checks so the ruleset only needs to reference one check name.
+  # Skipped sub-checks (e.g. docs-only PRs skip lint) count as passed.
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [lint, unit-tests, rust, complexity, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate results
+        run: |
+          results=(
+            "${{ needs.lint.result }}"
+            "${{ needs.unit-tests.result }}"
+            "${{ needs.rust.result }}"
+            "${{ needs.complexity.result }}"
+            "${{ needs.security.result }}"
+          )
+          for r in "${results[@]}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Required check failed or was cancelled: $r"
+              exit 1
+            fi
+          done
+          echo "All required checks passed or were skipped."

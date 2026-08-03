@@ -42,7 +42,7 @@ jobs:
               - '**'
               - '!docs/**'
               - '!overrides/**'
-              - '!*.md'
+              - '!**/*.md'
               - '!LICENSE'
               - '!zensical.toml'
 

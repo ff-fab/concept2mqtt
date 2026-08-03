@@ -324,9 +324,6 @@ tasks:
         gh pr create --fill \
           --title "chore: update from copier template" \
           --body "Automated template update via \`task update:template:pr\`."
-        # Fail loudly if auto-merge can't be enabled (missing perms, branch
-        # protection, required checks) — the whole point of this task is the PR.
-        gh pr merge --auto --squash
 
   update:deps:
     desc: Update all dependencies to latest compatible versions

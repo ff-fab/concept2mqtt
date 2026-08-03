@@ -28,12 +28,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# pages: write and id-token: write only needed for deploy (push to main).
-# PRs only need contents: read and packages: read.
+# pages: write and id-token: write are scoped to the deploy job (push to
+# main) below. Workflow-wide, PRs and the build job only need read access.
 permissions:
   contents: read
-  pages: write
-  id-token: write
   packages: read # Pull the devcontainer image from GHCR
 
 env:
@@ -74,6 +72,9 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
+    permissions:
+      pages: write
+      id-token: write
     # Pages isn't available on private repos (free plan) — skip the deploy
     # there; the build job above still validates the docs.
     if: github.event_name == 'push' && github.event.repository.private == false

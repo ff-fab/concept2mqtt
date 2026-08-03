@@ -567,7 +567,7 @@ tasks:
       - task: csafe:fmt
       - task: csafe:lint
       - task: ci:test:rust-coverage
-      - maturin build --manifest-path packages/csafe-codec/Cargo.toml
+      - maturin build --manifest-path packages/csafe-codec/Cargo.toml --interpreter $(uv python find)
 
   ci:lint:
     desc: CI lint task (strict)

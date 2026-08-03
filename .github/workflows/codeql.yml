@@ -7,6 +7,9 @@
 #
 # Free for public repositories. Python analysis uses the built-in extractor
 # (no build step required).
+#
+# Skipped on private repositories: code scanning requires GitHub Advanced
+# Security there, so the job would fail with a configuration error.
 
 name: CodeQL
 
@@ -38,17 +41,20 @@ permissions:
 jobs:
   analyze:
     name: Analyze Python
+    # Code scanning is only available on private repos with GitHub Advanced
+    # Security — skip entirely for private repos.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           languages: python
           queries: security-extended
 
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           category: '/language:python'

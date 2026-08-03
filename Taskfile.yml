@@ -11,6 +11,12 @@ version: '3'
 vars:
   PKG: packages/concept2mqtt
   MODULE_NAME: 'concept2mqtt'
+  PRE_PR_PRECOMMIT_TIMEOUT: 10m
+  PRE_PR_LINT_TIMEOUT: 10m
+  PRE_PR_TYPECHECK_TIMEOUT: 10m
+  PRE_PR_TEST_TIMEOUT: 20m
+  PRE_PR_COMPLEXITY_TIMEOUT: 10m
+  PRE_PR_SECURITY_TIMEOUT: 10m
 
   # Guard vars: detect whether test files exist.
   # Used by test tasks to skip gracefully when directories are empty
@@ -21,6 +27,10 @@ vars:
     sh: find {{.PKG}}/tests/integration/ \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -qm1 . && echo true || echo false
   HAS_PYTHON_SOURCE:
     sh: find {{.PKG}}/src/{{.MODULE_NAME}} -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -qm1 . && echo true || echo false
+
+env:
+  MODULE_NAME: '{{.MODULE_NAME}}'
+  PKG: '{{.PKG}}'
 
 tasks:
   default:
@@ -167,58 +177,27 @@ tasks:
   test:
     desc: Run all tests (unit + integration) with coverage and summary
     cmds:
-      # Run all tests with coverage to enable threshold validation.
-      - cmd: |
-          if [ "{{.HAS_UNIT_TESTS}}" != "true" ]; then
-            echo "ℹ No unit tests found — skipping"
-            exit 0
-          fi
-          uv run pytest {{.PKG}}/tests/unit/ -v --tb=short --junitxml=results-unit.xml --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=json
-        ignore_error: true
-
-      - |
-        # Only run the summary when pytest actually produced results.
-        if [ -f results-unit.xml ]; then
-          uv run python {{.PKG}}/tests/scripts/summarize_tests.py --coverage-file=coverage.json
-        else
-          echo "ℹ No test results — skipping summary"
-        fi
+      - bash scripts/qa-task.sh test
 
   test:unit:
     desc: Run unit tests only (fast, every change)
     cmds:
-      - |
-        if [ "{{.HAS_UNIT_TESTS}}" != "true" ]; then
-          echo "ℹ No unit tests found — skipping"
-          exit 0
-        fi
-        uv run pytest {{.PKG}}/tests/unit/ -v --tb=short --junitxml=results-unit.xml
+      - bash scripts/qa-task.sh test:unit
 
   test:file:
     desc: 'Run specific test file or pattern (e.g.: task test:file -- packages/concept2mqtt/tests/unit/test_errors.py)'
     cmds:
-      - |
-        if [ -z "{{.CLI_ARGS}}" ]; then
-          echo "Usage: task test:file -- packages/concept2mqtt/tests/unit/test_foo.py" >&2
-          echo "   or: task test:file -- -k test_my_function" >&2
-          exit 1
-        fi
-        uv run pytest {{.CLI_ARGS}} -v --tb=short
+      - bash scripts/qa-task.sh test:file {{.CLI_ARGS}}
 
   test:integration:
     desc: Run integration tests (pytest)
     cmds:
-      - |
-        if [ "{{.HAS_INTEGRATION_TESTS}}" != "true" ]; then
-          echo "ℹ No integration tests found — skipping"
-          exit 0
-        fi
-        uv run pytest {{.PKG}}/tests/integration/ -v --tb=short -m integration
+      - bash scripts/qa-task.sh test:integration
 
   test:cov:
     desc: Run tests with coverage (terminal + XML for IDE)
     cmds:
-      - uv run pytest {{.PKG}}/tests/ --cov={{.PKG}}/src/{{.MODULE_NAME}} --cov-branch --cov-report=term-missing --cov-report=xml
+      - bash scripts/qa-task.sh test:cov
 
   test:cov:html:
     desc: Run tests with HTML coverage report
@@ -239,8 +218,7 @@ tasks:
   lint:
     desc: Run linting (ruff check + format check)
     cmds:
-      - uv run ruff check {{.PKG}}/src/ {{.PKG}}/tests/
-      - uv run ruff format --check {{.PKG}}/src/ {{.PKG}}/tests/
+      - bash scripts/qa-task.sh lint
 
   lint:fix:
     desc: Fix linting issues automatically
@@ -251,14 +229,12 @@ tasks:
   typecheck:
     desc: Run type checking (ty)
     cmds:
-      - uv run ty check {{.PKG}}/src/
+      - bash scripts/qa-task.sh typecheck
 
   check:
     desc: Run all checks (lint + typecheck + test + Rust)
     cmds:
-      - task: lint
-      - task: typecheck
-      - task: test
+      - bash scripts/qa-task.sh check
       - task: csafe:fmt
       - task: csafe:lint
       - task: csafe:test
@@ -270,14 +246,16 @@ tasks:
       - bash scripts/quality-summary.sh
 
   pre-pr:
-    desc: Run all pre-PR quality gates (pre-commit + lint + typecheck + tests + coverage + complexity + similarity)
+    desc: Run all pre-PR quality gates (pre-commit + lint + typecheck + tests + complexity + security).
+    env:
+      PRE_PR_PRECOMMIT_TIMEOUT: '{{.PRE_PR_PRECOMMIT_TIMEOUT}}'
+      PRE_PR_LINT_TIMEOUT: '{{.PRE_PR_LINT_TIMEOUT}}'
+      PRE_PR_TYPECHECK_TIMEOUT: '{{.PRE_PR_TYPECHECK_TIMEOUT}}'
+      PRE_PR_TEST_TIMEOUT: '{{.PRE_PR_TEST_TIMEOUT}}'
+      PRE_PR_COMPLEXITY_TIMEOUT: '{{.PRE_PR_COMPLEXITY_TIMEOUT}}'
+      PRE_PR_SECURITY_TIMEOUT: '{{.PRE_PR_SECURITY_TIMEOUT}}'
     cmds:
-      - pre-commit run --all-files
-      - task: lint
-      - task: typecheck
-      - task: test
-      - task: complexity
-      - task: similarity
+      - bash scripts/qa-task.sh pre-pr
       - task: csafe:fmt
       - task: csafe:lint
       - task: csafe:test
@@ -320,6 +298,36 @@ tasks:
     cmds:
       - uvx --python 3.14 --with jinja2-time copier update --trust
 
+  update:template:pr:
+    desc: Update from the copier template on a branch and open an auto-merge PR (for a protected main)
+    cmds:
+      - |
+        set -eu
+        # Refuse to run on a dirty tree: `git add -A` below would otherwise sweep
+        # unrelated local changes into the template-update commit and PR.
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "❌ Working tree is not clean — commit or stash your changes first." >&2
+          exit 1
+        fi
+        branch="chore/template-update-$(date +%Y%m%d-%H%M%S)"
+        git switch -c "$branch"
+        uvx --python 3.14 --with jinja2-time copier update --trust
+        git add -A
+        if git diff --cached --quiet; then
+          echo "✅ Already up to date with the template — nothing to do."
+          git switch -
+          git branch -d "$branch"
+          exit 0
+        fi
+        git commit -m "chore: update from copier template"
+        git push -u origin "$branch"
+        gh pr create --fill \
+          --title "chore: update from copier template" \
+          --body "Automated template update via \`task update:template:pr\`."
+        # Fail loudly if auto-merge can't be enabled (missing perms, branch
+        # protection, required checks) — the whole point of this task is the PR.
+        gh pr merge --auto --squash
+
   update:deps:
     desc: Update all dependencies to latest compatible versions
     cmds:
@@ -333,33 +341,56 @@ tasks:
   complexity:
     desc: Check all code complexity gates (cyclomatic + cognitive + duplication/similarity)
     cmds:
-      - task: complexity:cyclomatic
-      - task: complexity:cognitive
-      - task: similarity
+      - bash scripts/qa-task.sh complexity
 
   complexity:cyclomatic:
     desc: Check cyclomatic complexity (radon + xenon)
     cmds:
-      - uv run radon cc {{.PKG}}/src/{{.MODULE_NAME}} --average --show-complexity
-      - uv run xenon {{.PKG}}/src/{{.MODULE_NAME}} --max-absolute B --max-modules A --max-average A
+      - bash scripts/qa-task.sh complexity:cyclomatic
 
   complexity:cognitive:
     desc: Check cognitive complexity (flake8-cognitive-complexity, max 15)
     cmds:
-      - uv run flake8 --select=CCR001 {{.PKG}}/src/{{.MODULE_NAME}}/
+      - bash scripts/qa-task.sh complexity:cognitive
 
   similarity:
     desc: Check for code duplication (symilar — ships with pylint)
     cmds:
-      - |
-        OUTPUT=$(find {{.PKG}}/src/{{.MODULE_NAME}} -name '*.py' -print0 \
-          | xargs -0 -x uv run symilar -d 4 --ignore-imports --ignore-signatures)
-        echo "$OUTPUT"
-        DUPES=$(printf '%s\n' "$OUTPUT" | sed -n 's/.*duplicates=\([0-9][0-9]*\).*/\1/p' | head -n1)
-        if [ "${DUPES:-0}" -gt 0 ]; then
-          echo "❌ Found $DUPES duplicate lines"
-          exit 1
-        fi
+      - bash scripts/qa-task.sh similarity
+
+  # ===========================================================================
+  # Security
+  # ===========================================================================
+
+  security:audit:
+    desc: Run all security audit checks (deps + secrets + python lint + actions)
+    cmds:
+      - bash scripts/qa-task.sh security:audit
+
+  security:deps:
+    desc: Audit locked Python dependencies for known vulnerabilities (pip-audit)
+    cmds:
+      - bash scripts/qa-task.sh security:deps
+
+  security:secrets:
+    desc: Detect newly introduced secrets using the committed baseline
+    cmds:
+      - bash scripts/qa-task.sh security:secrets
+
+  security:python:
+    desc: Run Python security lint on production package code (ruff -S)
+    cmds:
+      - bash scripts/qa-task.sh security:python
+
+  security:actions:
+    desc: Run GitHub Actions lint and security checks (actionlint + zizmor)
+    cmds:
+      - bash scripts/qa-task.sh security:actions
+
+  docker:lint:
+    desc: Lint Dockerfiles with hadolint (fails on DL-prefixed warnings)
+    cmds:
+      - bash scripts/qa-task.sh docker:lint
 
   # ===========================================================================
   # Supply Chain

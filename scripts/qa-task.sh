@@ -190,8 +190,9 @@ _run_impl() {
             ;;
 
         security:deps)
+            # --no-emit-workspace: exclude editable workspace members (monorepo) so pip-audit can hash third-party deps
             uv export --format requirements-txt \
-                --all-extras --all-groups --no-emit-project \
+                --all-extras --all-groups --no-emit-workspace \
                 | uv run pip-audit -r /dev/stdin \
                     --strict --progress-spinner off
             ;;

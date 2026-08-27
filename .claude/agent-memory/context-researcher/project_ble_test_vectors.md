@@ -1,22 +1,21 @@
 ---
 name: BLE test vectors branch state
 description:
-  Current state of feat/ble-test-vectors branch — what was completed, what's next
+  STALE — superseded by current beads state; kept only for historical PR reference.
+  Check `bd show c2m-dn9.5` for current status instead.
 type: project
 ---
 
-The `feat/ble-test-vectors` branch added two commits on top of main:
+**STALE as of 2026-08-27.** The `feat/ble-test-vectors` branch this memory described was
+merged via PR #17
+(`9c39e36 feat: add YAML test vectors and parametrized BLE decoder runner (#17)`), and
+the beads prefix has since been renamed from `workspace-*` to `c2m-*` (commit
+`8268608`). The old IDs `workspace-dn9.3` / `workspace-m05.4` no longer exist as such.
 
-1. `62f328f` — YAML test vectors + parametrized runner for all 14 BLE decoders
-2. `eb4bd94` — devcontainer fix (symlink Rust toolchain into /usr/local/bin)
+Current equivalent: the CSAFE Codec — Decoders & Publication epic is `c2m-dn9`. Its
+remaining open child is `c2m-dn9.5` (Publish csafe-codec v0.1.0 to crates.io and PyPI),
+which was READY (unblocked) as of 2026-08-27 — run `bd show c2m-dn9.5` and
+`bd show c2m-dn9` to verify current status before acting on this.
 
-The branch is NOT yet merged/PRed. The work completes beads task `workspace-dn9.3`
-(Generate test vectors from YAML spec).
-
-**Why:** The CSAFE Codec — Decoders & Publication epic (workspace-dn9) is 80% done (4/5
-children closed). The remaining child is `workspace-dn9.5` (Publish to crates.io and
-PyPI), which is blocked on `workspace-m05.4` (Expose command builders to Python via
-PyO3).
-
-**How to apply:** The branch is ready for PR creation. The orchestrator should create a
-PR for this branch, then identify that the next actionable work is `workspace-m05.4`.
+See also [[project_ble_gateway_architecture]] for the separate, unrelated BLE gateway
+hardware-validation track (epic `c2m-ooz`).

@@ -13,7 +13,7 @@ BLE adapter (hci1), and no iPhone for traffic capture.
 
 **Why:** Work happens in a container while the erg and Pi live at the user's home.
 Anything touching real BLE — connection stability, the official Concept2 iPhone app,
-PacketLogger captures — can only be executed by the user in person.
+traffic captures — can only be executed by the user in person.
 
 **How to apply:** When planning any BLE feature, split acceptance criteria into (a)
 automated, verifiable here via unit tests against in-memory doubles, and (b)
@@ -22,4 +22,4 @@ a written manual procedure rather than claiming completion. Existing precedents:
 `docs/planning/legacy/examples/` for hardware scripts and
 `docs/testing/pm5-ble-relay-hardware-validation.md` for procedures. Leave the beads
 issue open and report which criteria are still pending. See
-[[feedback-flag-hardware-steps]].
+[[feedback-flag-hardware-steps]] and [[feedback-validation-runs-on-pi-only]].

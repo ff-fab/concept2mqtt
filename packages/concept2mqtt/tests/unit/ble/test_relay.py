@@ -5,10 +5,12 @@ Test Techniques Used:
 - Specification-based Testing: pass-through fidelity in both directions
 - Branch Coverage: readable/writable guards, tap present/absent, notify failure
 - Error Guessing: unknown UUIDs, wrong-direction access, disconnected consumer
-- Boundary Value Analysis: empty payloads
+- Boundary Value Analysis: empty payloads, DEBUG/INFO log level threshold
 """
 
 from __future__ import annotations
+
+import logging
 
 import pytest
 from tests.fixtures.ble import FakeCentralLink, FakePeripheralServer
@@ -401,6 +403,91 @@ class TestReadRelay:
     ) -> None:
         with pytest.raises(UnknownCharacteristicError):
             await peripheral.read("00000000-0000-0000-0000-000000000000")
+
+
+class TestGattAccessLogging:
+    """Peripheral-side access is logged at DEBUG, identifying the UUID touched.
+
+    The Pi is the GATT server the app connects to, so this log — not an
+    external sniffer — is the evidence for which service a connecting app
+    queries (hardware validation Step B).
+
+    Technique: Specification-based Testing — the log is a documented artifact
+    of the validation procedure, not incidental output.
+    """
+
+    async def test_read_logs_the_characteristic_at_debug(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.DEBUG, logger="concept2mqtt.ble.relay")
+
+        # Act
+        await peripheral.read(SERIAL_NUMBER)
+
+        # Assert
+        assert SERIAL_NUMBER in caplog.text
+        assert "Serial Number String" in caplog.text
+
+    async def test_write_logs_the_characteristic_at_debug(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.DEBUG, logger="concept2mqtt.ble.relay")
+
+        # Act
+        await peripheral.write(CSAFE_RECEIVE, b"\xf1\x76\xf2")
+
+        # Assert
+        assert CSAFE_RECEIVE in caplog.text
+        assert "3 bytes" in caplog.text
+
+    async def test_rejected_access_is_still_logged(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """An app probing a wrong-direction characteristic is evidence too.
+
+        Technique: Error Guessing — logging only successful access would hide
+        exactly the mismatches Step B exists to detect.
+        """
+        # Arrange
+        caplog.set_level(logging.DEBUG, logger="concept2mqtt.ble.relay")
+
+        # Act
+        with pytest.raises(CharacteristicAccessError):
+            await peripheral.read(CSAFE_RECEIVE)
+
+        # Assert
+        assert CSAFE_RECEIVE in caplog.text
+
+    async def test_access_is_silent_above_debug_level(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Per-access logging must stay opt-in — a session is thousands of them.
+
+        Technique: Boundary Value Analysis — INFO is the level below which the
+        access log is suppressed.
+        """
+        # Arrange
+        caplog.set_level(logging.INFO, logger="concept2mqtt.ble.relay")
+
+        # Act
+        await peripheral.read(SERIAL_NUMBER)
+
+        # Assert
+        assert caplog.records == []
 
 
 class TestCacheCoherence:

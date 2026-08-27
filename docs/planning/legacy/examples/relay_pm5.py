@@ -25,14 +25,16 @@ Run
 
     Options:
       --profile pm5-proprietary|ftms   GATT profile to emulate (default:
-                                       pm5-proprietary; switch to ftms once a
-                                       PacketLogger capture shows the app uses
-                                       the standard Fitness Machine Service)
+                                       pm5-proprietary; switch to ftms if the
+                                       run log shows the app queries the
+                                       standard Fitness Machine Service)
       --central hci0                   adapter holding the real PM5 link
       --peripheral hci1                adapter running the emulated PM5
+      --debug                          log every GATT read/write the connected
+                                       app performs (Step B evidence)
 
 Then follow ``docs/testing/pm5-ble-relay-hardware-validation.md`` for the
-per-criterion checklist and the traffic-capture procedure.
+per-criterion checklist and the GATT-access capture procedure.
 
 Known limitations
     - bluez-peripheral's D-Bus ``ReadValue``/``WriteValue`` handlers are
@@ -194,6 +196,10 @@ class BluezPeripheralServer:
 
     def _make_getter(self, uuid: str) -> Callable[[object, object], bytes]:
         def getter(_service: object, _options: object) -> bytes:
+            # Values are primed at startup, so this is the only place an
+            # app-driven ReadValue is observable — the evidence for which
+            # service the connecting app actually queries (Step B).
+            log.debug("GATT read from consumer: %s", uuid)
             return self._values.get(uuid, b"")
 
         return getter
@@ -295,7 +301,14 @@ def main() -> None:
     parser.add_argument("--central", default="hci0")
     parser.add_argument("--peripheral", default="hci1")
     parser.add_argument("--profile", default="pm5-proprietary")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log every GATT read/write the connected app performs.",
+    )
     args = parser.parse_args()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
     try:
         asyncio.run(run(args.central, args.peripheral, args.profile))
     except KeyboardInterrupt:

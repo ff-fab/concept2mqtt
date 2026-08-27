@@ -8,6 +8,11 @@ second adapter) and moves opaque bytes between them.
 
 The relay deliberately does not decode CSAFE. Decoding belongs to the MQTT
 publishing path, which taps the same notification stream via ``tap``.
+
+Peripheral-side reads and writes are logged at ``DEBUG``. Because the Pi is
+itself the GATT server the app connects to, that log is the record of which
+UUIDs a connecting app touched — no external BLE sniffer needed. See
+``docs/testing/pm5-ble-relay-hardware-validation.md``.
 """
 
 from __future__ import annotations
@@ -176,6 +181,7 @@ class BleRelay:
             CharacteristicAccessError: Characteristic is not readable.
         """
         characteristic = self._profile.characteristic(uuid)
+        log.debug("Consumer read %s (%s)", characteristic.uuid, characteristic.name)
         if not characteristic.readable:
             raise CharacteristicAccessError(uuid, "read")
         if characteristic.uuid not in self._cache:
@@ -193,6 +199,12 @@ class BleRelay:
             CharacteristicAccessError: Characteristic is not writable.
         """
         characteristic = self._profile.characteristic(uuid)
+        log.debug(
+            "Consumer write %s (%s): %d bytes",
+            characteristic.uuid,
+            characteristic.name,
+            len(data),
+        )
         if not characteristic.writable:
             raise CharacteristicAccessError(uuid, "write")
         payload = bytes(data)

@@ -1,4 +1,4 @@
-# PM5 BLE Relay — Hardware Validation Findings (Run 2026-09-05)
+# PM5 BLE Relay — Hardware Validation Findings (Runs 2026-09-05 / 2026-09-06)
 
 Live findings log from the first real hardware execution of
 [`docs/testing/pm5-ble-relay-hardware-validation.md`](../../testing/pm5-ble-relay-hardware-validation.md)
@@ -6,13 +6,23 @@ against `c2m-ooz.3`. Captures results, deviations, defects, and tooling lessons
 so they can feed the requirements + implementation plan for the full
 `concept2mqtt` app.
 
-**Status:** paused 2026-09-05 ~23:15. Steps A + B complete. Step C functionally
-demonstrated once (see §11) but not re-verified — blocked by a bonding /
-GATT-cache instability that makes every relay restart require a both-sides bond
-wipe (§8). Step D not started. Two relay defects fully characterised for the
-implementation plan: **(1) ~1 s added latency** vs ~0.15 s direct (§11.1), and
-**(2) connection instability across restarts** (§8). Latency lever is
-app-controlled (`ce060034`), not ours (§11.1a).
+**Status (as of the 2026-09-05 session):** paused ~23:15. Steps A + B complete.
+Step C functionally demonstrated once (see §11) but not re-verified — blocked
+by a bonding / GATT-cache instability that makes every relay restart require a
+both-sides bond wipe (§8). Step D not started. Two relay defects fully
+characterised for the implementation plan: **(1) ~1 s added latency** vs
+~0.15 s direct (§11.1), and **(2) connection instability across restarts**
+(§8). Latency lever is app-controlled (`ce060034`), not ours (§11.1a).
+
+**Update (2026-09-06, §14):** both defects root-caused and fixed. (1) was an
+over-length consumer write (`ce060034`) being forwarded intact into a 1-byte
+characteristic and rejected by the PM5 (`0x0D`) — truncating to the declared
+length fixes it; the relay's own forward path was never the bottleneck
+(1.2 ms mean). (2) was three defects in the peripheral shutdown/pairing path,
+peripheral-side hardware-verified (§14.3). A third defect — SIGINT/SIGTERM
+being silently ignored — was found and fixed in the same session (§14.5).
+None of this has an end-to-end iPhone re-verification yet; that is
+`c2m-ooz.3.3`.
 
 ### TL;DR for planning
 
@@ -21,8 +31,8 @@ app-controlled (`ce060034`), not ours (§11.1a).
 | App discovery | Needs 128-bit `ce060000` in the ADV; legacy adapter can't fit the real PM5's full packet → name truncated to "PM5" |
 | App protocol | Proprietary `ce06xxxx` only; no FTMS. Writes CSAFE to `ce060021`, sample rate to `ce060034` |
 | Functional relay | Works — connects, streams all rowing data incl. workout summary, start/pause/stop, zero notification drops in a clean session |
-| Latency | **Relay adds ~1 s (direct ≈ 0.15 s). Defect.** Likely the relayed `ce060034` write not taking effect + forward-path overhead |
-| Stability | **Every restart needs a both-sides Bluetooth bond wipe or the app won't connect. Defect.** Dynamic GATT handles + iOS cache |
+| Latency | **Relay adds ~1 s (direct ≈ 0.15 s).** Root cause found and fixed 2026-09-06 (§14.5): the app's 8-byte `ce060034` write was rejected by the PM5 for exceeding the declared 1-byte length. Relay's own forward path measures 1.2 ms mean / 4.2 ms max. Pending `c2m-ooz.3.3` end-to-end re-verification |
+| Stability | **Every restart needs a both-sides Bluetooth bond wipe or the app won't connect.** Fixed 2026-09-06 (§14.1); peripheral-side hardware-verified (§14.3). End-to-end iPhone re-verification pending `c2m-ooz.3.3` |
 | Pairing | Relay bonds; should be "just works" / non-bondable |
 | Firmware | `ce06003c` (HR belt) not implemented on FW `8200-000409-217.067` — tolerated |
 
@@ -324,7 +334,11 @@ Draft — to be firmed up after Steps C–E.
 - **R-RELAY-2** MUST auto-reconnect the central PM5 link on drop, with backoff,
   without tearing down the peripheral, and resume relaying.
 - **R-RELAY-3** MUST shut down cleanly on SIGINT/SIGTERM: disconnect the central
-  link so the PM5 is immediately re-connectable.
+  link so the PM5 is immediately re-connectable. **Fixed 2026-09-06 (§14.5):**
+  `KeyboardInterrupt` does not fire under `setsid` with no controlling
+  terminal, so SIGINT was silently ignored and SIGTERM unhandled — every prior
+  "clean" stop actually left the PM5 connected. Explicit `asyncio` signal
+  handlers now cover both.
 - **R-RELAY-4** Tolerate firmware that does not implement every spec
   characteristic (`streaming=N/M`, `ce06003c` absent here); surface the gap,
   keep running.
@@ -497,8 +511,16 @@ _pending — 20-minute continuous piece, app backgrounding, reconnect_
 - **R-LATENCY-1** ~~The relay SHOULD set the PM5 status sample rate to a fast
   value at startup~~ **Superseded (§11.1a):** the app sets `ce060034` itself on
   every connect; a relay-forced fast rate is overridden and, tried standalone,
-  *increased* perceived latency on this transport. The relay MUST forward the
-  consumer's `ce060034` writes intact and MUST NOT add its own rate policy.
+  *increased* perceived latency on this transport. ~~The relay MUST forward
+  the consumer's `ce060034` writes intact and MUST NOT add its own rate
+  policy.~~ **Revised (§14.5):** that wording turned out to be the bug —
+  forwarding the app's 8-byte write intact into a characteristic the PM5
+  declares as 1 byte is what triggered the `0x0D` rejection that kept the erg
+  at 1 Hz. The relay MUST honour each characteristic's declared length
+  (truncating an over-length consumer write, as the real PM5 would enforce at
+  the ATT layer) and MUST NOT otherwise reinterpret or rate-limit what the
+  consumer asked for — clamping length is not the same as adding a rate
+  policy.
 - **R-LATENCY-2** Production operation MUST NOT do synchronous per-notification
   logging on the forward path (structured logging must be async / rate-limited /
   off by default).
@@ -507,11 +529,19 @@ _pending — 20-minute continuous piece, app backgrounding, reconnect_
 - **R-LATENCY-4** End-to-end added latency through the relay MUST be small
   relative to a direct connection. **Measured baseline: direct ≈ 0.15 s, relay
   ≈ 1.2 s — the relay adds ~1 s and that is a defect, not a limit.** Target: relay
-  adds < ~0.2 s.
+  adds < ~0.2 s. **Root cause found and fixed 2026-09-06 (§14.5)** — the
+  relay's own forward path measures 1.2 ms mean / 4.2 ms max, so the target is
+  already met on the software side; end-to-end re-measurement with the app is
+  `c2m-ooz.3.3`.
 - **R-LATENCY-5** The consumer's `ce060034` (sample-rate) write MUST reach the
   PM5 in a form the PM5 honours — verify the relayed write actually raises the
   PM5's notification rate (it did not this run; PM5 stayed ~1 Hz on the relay's
-  central link while a direct client gets the fast rate).
+  central link while a direct client gets the fast rate). **Fixed 2026-09-06
+  (§14.5):** the write reached the PM5 unhonoured because it exceeded the
+  declared length (`0x0D` Invalid Attribute Value Length); truncating to the
+  declared length is what the direct-connection contract already enforces.
+  Whether the PM5 then actually speeds up end-to-end through the relay is
+  `c2m-ooz.3.3`.
 - **R-DATA-1** All rowing-service notify characteristics
   (`ce060031`–`ce06003f`, incl. stroke, split/interval, workout-summary, force
   curve) MUST relay unmodified — confirmed working this run.
@@ -552,8 +582,13 @@ cause and `c2m-ooz.3.2` should be reopened against it.
 
 ### 14.2 `c2m-ooz.3.1` — ~1 s added latency
 
-The root cause is **not** established, and this run's instrumentation could not
-have established it: `notifications_relayed` counted every forward, including
+> **Superseded by §14.5.** At the time this section was written the root cause
+> was not established. The next hardware run (still 2026-09-06) confirmed
+> hypothesis 1 directly and the fix landed — see §14.5. Left as-is below for
+> the record of how the measurement was made instrumentable.
+
+This run's instrumentation could not by itself have established the root
+cause: `notifications_relayed` counted every forward, including
 the ones bluez-peripheral silently discarded because the consumer had not
 subscribed. So the §11 per-UUID table shows what the relay *pushed*, not what
 reached the air, and the "relay software path" row in §11.1 was never measured
@@ -640,3 +675,63 @@ The relay had no disconnect handling at all: `run()` awaited
 Only the first connect still fails fast ("No PM5 found — wake it with the
 handle"): an erg asleep at startup is a setup mistake worth reporting, whereas
 a mid-session drop is worth riding out.
+
+### 14.5 Second 2026-09-06 hardware run — latency root cause + SIGINT defect
+
+Hardware session on edge-04 (`192.168.12.114`) exercising the §14.1/§14.4
+fixes against the real PM5 and the Concept2 app.
+
+**Write payload logging** (`ace886b`, prerequisite for the below): an
+over-length consumer write only ever logged the length, not the bytes —
+insufficient to design a translation. The relay now logs the hex payload too,
+on the anomaly path only, so it stays off the hot path.
+
+**Root cause of the ~1 s latency, confirmed** (`12a4e62`): the app writes
+`02 00 00 00 00 00 00 00` to `ce060034` — a little-endian 64-bit `2`, i.e. a
+request for a 250 ms sample rate — into a characteristic the spec (and the
+real PM5) declares as **1 byte**. A phone connected directly to the erg is
+constrained to 1 byte before the write goes out; the emulated server did not
+enforce that limit, so all 8 bytes were forwarded whole as an ATT Write
+Request, and the PM5 answered **Invalid Attribute Value Length (`0x0D`)** and
+discarded it. The erg stayed at its 1 Hz default for the entire session while
+the app believed it had asked for 250 ms — this is essentially the whole ~1 s
+gap versus a direct connection, confirming hypothesis 1 from §14.2 outright.
+
+The relay's own forward path measures **1.2 ms mean / 4.2 ms max** — the
+30–100 ms estimate in §11.1's table was never real; the entire visible cost
+was the rejected write forcing the PM5 back to its slow default.
+
+**Fix:** truncate an over-length consumer write to the characteristic's
+declared length before forwarding, reproducing the real erg's own contract at
+the ATT layer. This is not a relay-side rate policy — the app's chosen value
+(`2` = 250 ms) passes through unchanged, only the length is clamped — so it is
+consistent with the spirit of R-LATENCY-1, but the literal wording ("forward
+these writes intact") is now wrong and needed revising (done below).
+
+**SIGINT/SIGTERM defect, found and fixed in the same session** (`aad17bf`):
+the documented `pkill -INT` stop procedure had never actually worked. The
+relay relied on `KeyboardInterrupt`, which does nothing when the process has
+no controlling terminal (it was started under `setsid`, per §8) — SIGINT was
+silently ignored, five more stats intervals ran, and the `finally` block
+(which disconnects the PM5) never fired. SIGTERM was not handled at all
+either, so systemd would have killed the process mid-session with the same
+effect. Every prior "clean" stop in this log actually left the PM5 connected
+on `hci0`, which is why the next run's scan sometimes failed to find it (§8).
+Fixed with explicit `asyncio` signal handlers for both signals, and the
+reconnect loop moved into a separate supervisor task so the main coroutine
+just waits on the stop event; the central disconnect in the shutdown path now
+logs an error (not `contextlib.suppress`) if it fails, since a missed
+disconnect stalls the *next* run, not just this one.
+
+**Not yet re-run:** the `forward_ms`/`notifications_withheld`/subscribe-line
+capture this section's predecessor asked for — the write-payload finding
+resolved hypothesis 1 before that instrumentation was needed for its
+originally intended purpose. It remains in place for the `c2m-ooz.3.3`
+end-to-end session and is still useful there (e.g. to catch any *other*
+over-length write from the app).
+
+**Still unverified, because it needs the full loop through the app:** that
+raising the erg's actual notification rate (now that its write reaches the
+PM5 undamaged) closes the perceived lag to something comparable to the
+~0.15 s direct baseline, and that no other characteristic hits the same
+over-length pattern. Both are `c2m-ooz.3.3` work.

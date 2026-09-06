@@ -62,10 +62,35 @@ from bluez_peripheral.gatt.characteristic import CharacteristicFlags as CharFlag
 from bluez_peripheral.gatt.characteristic import characteristic
 from bluez_peripheral.gatt.service import Service, ServiceCollection
 from bluez_peripheral.util import Adapter, get_message_bus
+from dbus_next import DBusError, Variant
+from dbus_next.constants import PropertyAccess
+from dbus_next.service import dbus_property
 
 from concept2mqtt.ble import BleRelay, CharProperty, GattProfile, get_profile
 from concept2mqtt.ble.profile import Service as ProfileService
 from concept2mqtt.ble.profile import pm5_uuid
+
+
+class _ServiceDataAdvertisement(Advertisement):
+    """An ``Advertisement`` whose Service Data BlueZ will actually accept.
+
+    bluez-peripheral declares ``LEAdvertisement1.ServiceData`` with D-Bus
+    signature ``a{say}``; BlueZ requires ``a{sv}`` (each byte array wrapped in
+    a variant) and rejects the whole advertisement with "Failed to parse
+    advertisement" otherwise — an upstream bug.
+
+    Unused by the default profile: hardware validation (2026-09-05) showed the
+    Concept2 app discovers the relay from the ``ce060000`` UUID alone, and a
+    legacy-advertising adapter has no room for Service Data beside a 128-bit
+    UUID. Kept for profiles that do set ``advertised_service_data``.
+    """
+
+    @dbus_property(PropertyAccess.READ)
+    def ServiceData(self) -> "a{sv}":  # noqa: F722  # dbus-next signature
+        return {
+            uuid: Variant("ay", bytes(data)) for uuid, data in self._serviceData.items()
+        }
+
 
 PM5_NAME_PREFIX = "PM5"
 SCAN_TIMEOUT = 15.0
@@ -164,11 +189,22 @@ class BluezPeripheralServer:
         )
         await self._collection.register(self._bus, adapter=adapter)
 
-        self._advert = Advertisement(
-            profile.device_name,
+        advert_cls = (
+            _ServiceDataAdvertisement
+            if profile.advertised_service_data
+            else Advertisement
+        )
+        # Legacy advertising is 31 bytes; a 128-bit service UUID (18) plus
+        # the full name overflows it and BlueZ rejects the whole advert.
+        # The adapter alias (set above) still carries the full name over
+        # GATT once connected.
+        adv_name = profile.device_name.split()[0][:8]
+        self._advert = advert_cls(
+            adv_name,
             list(profile.advertised_service_uuids),
             0x0000,
             0,
+            serviceData=dict(profile.advertised_service_data),
         )
         await self._advert.register(self._bus, adapter)
         log.info(
@@ -227,10 +263,17 @@ class BluezPeripheralServer:
             self._bus.disconnect()
 
     async def _resolve_adapter(self) -> Adapter:
-        for adapter in await Adapter.get_all(self._bus):
-            if adapter._proxy.path.rsplit("/", 1)[-1] == self._adapter_name:
-                return adapter
-        raise SystemExit(f"adapter {self._adapter_name} not found")
+        # Not Adapter.get_all(): it wraps every child node under /org/bluez
+        # unconditionally, and this BlueZ build exposes a non-adapter
+        # /org/bluez/test (SimAccessTest1) node that has no Adapter1
+        # interface, crashing the enumeration before it reaches hci1.
+        path = f"/org/bluez/{self._adapter_name}"
+        try:
+            introspection = await self._bus.introspect("org.bluez", path)
+        except DBusError as exc:
+            raise SystemExit(f"adapter {self._adapter_name} not found") from exc
+        proxy = self._bus.get_proxy_object("org.bluez", path, introspection)
+        return Adapter(proxy)
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +329,10 @@ async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) 
     reporter = asyncio.create_task(_report(relay))
     try:
         await relay.start()
+        # The relay deliberately sets no sample-rate policy of its own: the
+        # app writes ce060034 on every connect, and a relay-forced fast rate
+        # is both overridden and (measured 2026-09-05) worse for latency on a
+        # legacy-advertising link. See findings §11.1a / R-LATENCY-1.
         log.info("Relay live. Connect the Concept2 app to the advertised PM5.")
         await asyncio.Event().wait()
     finally:

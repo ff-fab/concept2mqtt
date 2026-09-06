@@ -227,4 +227,4 @@ Only close `c2m-ooz.3` once Steps A–E are complete and every gap has a home.
 
 | Date | Kernel | PM5 firmware | Profile | Result | Notes |
 | ---- | ------ | ------------ | ------- | ------ | ----- |
-|      |        |              |         |        |       |
+| 2026-09-05 | `6.18.42-v8+` | `8200-000409-217.067` (HW `907`) | `pm5-proprietary` | A ✅ · B ✅ · C ⚠️ partial · D ⛔ not run | Steps A/B pass. B: app uses proprietary `ce06xxxx` only; discovery needs 128-bit `ce060000` advertised. C: relay functional once (metrics, start/pause/stop, workout summary all relay), but **relay adds ~1 s latency vs ~0.15 s direct** and **connection breaks on every relay restart without a both-sides bond wipe**. Full write-up + code changes: [`docs/planning/log/pm5-ble-relay-hardware-validation-findings.md`](../planning/log/pm5-ble-relay-hardware-validation-findings.md). Follow-ups: `c2m-ooz.3.1`–`.4`. |

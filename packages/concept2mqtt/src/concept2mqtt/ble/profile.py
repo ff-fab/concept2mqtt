@@ -22,7 +22,7 @@ profile, keep the relay. See ``docs/testing/pm5-ble-relay-hardware-validation.md
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Flag, auto
 from typing import Final
 
@@ -109,12 +109,19 @@ class GattProfile:
         advertised_service_uuids: The subset of ``services`` to put in the
             advertising packet. A BLE advertisement holds 31 bytes, so only one
             or two 128-bit UUIDs fit — advertise what consumers scan for.
+        advertised_service_data: Service Data AD structures to include, keyed
+            by short (16-bit) UUID string. The real PM5 advertises Fitness
+            Machine Service Data (machine type = rower); the Concept2 app was
+            shown not to need it (2026-09-05), and on a legacy-advertising
+            adapter it does not fit alongside a 128-bit UUID. Empty by
+            default, kept for consumers that do filter on it.
     """
 
     name: str
     device_name: str
     services: tuple[Service, ...]
     advertised_service_uuids: tuple[str, ...]
+    advertised_service_data: dict[str, bytes] = field(default_factory=dict)
 
     def __iter__(self) -> Iterator[Characteristic]:
         """Iterate every characteristic across every service."""
@@ -266,12 +273,23 @@ def pm5_proprietary_profile() -> GattProfile:
 
     Transcribed from ``docs/planning/spec/csafe/ble_services.yaml``;
     ``tests/unit/ble/test_profile_spec_conformance.py`` fails if the two drift.
+
+    Advertises the 128-bit ``ce060000`` PM identity service, which hardware
+    validation on 2026-09-05 established is what the official Concept2 iOS app
+    scan-filters on: advertising ``0x1826`` alone, or ``0x1826`` plus its
+    Service Data, left the relay invisible in the app's device list, and
+    adding ``ce060000`` made it appear immediately.
+
+    ``ce060000`` is a real service on the PM5 but is absent from
+    ``ble_services.yaml``, so the relay advertises it without serving it. The
+    app connected and ran a full session that way; whether it ever queries the
+    service is an open question for the next hardware run.
     """
     return GattProfile(
         name="pm5-proprietary",
         device_name="PM5",
         services=_build_services(_PM5_SERVICES, pm5_uuid),
-        advertised_service_uuids=(pm5_uuid(0x0030),),
+        advertised_service_uuids=(pm5_uuid(0x0000),),
     )
 
 

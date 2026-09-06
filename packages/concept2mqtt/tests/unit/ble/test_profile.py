@@ -196,15 +196,26 @@ class TestPm5ProprietaryProfile:
             pm5_uuid(0x0040),
         )
 
-    def test_advertises_only_the_rowing_service(self) -> None:
-        """One 128-bit UUID is all a 31-byte advertising packet comfortably fits.
+    def test_advertises_the_pm_identity_service_the_app_scan_filters_on(
+        self,
+    ) -> None:
+        """The Concept2 app only lists the relay when ``ce060000`` is in the
+        advertising data; ``0x1826`` alone left it invisible.
 
-        Technique: Boundary Value Analysis — advertising payload limit.
+        Technique: Specification-based Testing — c2m-ooz.3 hardware
+        validation, 2026-09-05.
         """
         advertised = get_profile().advertised_service_uuids
 
-        assert advertised == (pm5_uuid(0x0030),)
-        assert set(advertised) <= set(get_profile().service_uuids)
+        assert advertised == (pm5_uuid(0x0000),)
+
+    def test_advertises_no_service_data_by_default(self) -> None:
+        """A legacy-advertising adapter cannot fit Service Data alongside a
+        128-bit UUID in 31 bytes, and the app does not require it.
+
+        Technique: Boundary Value Analysis — legacy advertising payload limit.
+        """
+        assert get_profile().advertised_service_data == {}
 
     def test_serial_number_is_readable_for_identity_emulation(self) -> None:
         serial = get_profile().characteristic(pm5_uuid(0x0012))

@@ -607,6 +607,9 @@ class TestRejectedWriteVisibility:
         assert central.writes == [(SAMPLE_RATE, b"\x00\x01", True)]
         assert "wrote 2 bytes" in caplog.text
         assert "which holds 1" in caplog.text
+        # The payload is the evidence: an over-long write is the app asking
+        # for something the relay is mistranslating, and the bytes say what.
+        assert "00 01" in caplog.text
 
     async def test_write_within_the_declared_length_is_not_flagged(
         self,

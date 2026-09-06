@@ -309,11 +309,12 @@ class BleRelay:
             # to the 1-byte sample-rate characteristic, which is the leading
             # explanation for the PM5 staying at 1 Hz through the relay.
             log.warning(
-                "Consumer wrote %d bytes to %s (%s), which holds %d",
+                "Consumer wrote %d bytes to %s (%s), which holds %d: %s",
                 len(data),
                 characteristic.uuid,
                 characteristic.name,
                 characteristic.max_length,
+                bytes(data).hex(" "),
             )
         payload = bytes(data)
         try:

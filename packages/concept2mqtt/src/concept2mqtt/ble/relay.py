@@ -102,11 +102,22 @@ class RelayStats:
     forward_seconds_max: float = 0.0
 
     @property
+    def _forward_attempts(self) -> int:
+        """Notifications handed to the peripheral, whether or not it accepted them.
+
+        ``forward_seconds_total``/``_max`` accumulate for every attempt in
+        :meth:`BleRelay._on_notification`, a failed one (``notify_errors``)
+        included — the timing covers the call regardless of its outcome.
+        """
+        return self.notifications_relayed + self.notify_errors
+
+    @property
     def forward_ms_mean(self) -> float:
         """Mean time spent handing a notification to the peripheral, in ms."""
-        if not self.notifications_relayed:
+        attempts = self._forward_attempts
+        if not attempts:
             return 0.0
-        return 1000 * self.forward_seconds_total / self.notifications_relayed
+        return 1000 * self.forward_seconds_total / attempts
 
 
 class BleRelay:

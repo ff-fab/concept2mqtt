@@ -106,9 +106,12 @@ class GattProfile:
         name: Registry key for this profile.
         device_name: Local name to advertise, e.g. ``PM5 530426599 Row``.
         services: Every service the emulated GATT server exposes.
-        advertised_service_uuids: The subset of ``services`` to put in the
-            advertising packet. A BLE advertisement holds 31 bytes, so only one
-            or two 128-bit UUIDs fit — advertise what consumers scan for.
+        advertised_service_uuids: UUIDs to put in the advertising packet. A BLE
+            advertisement holds 31 bytes, so only one or two 128-bit UUIDs fit —
+            advertise what consumers scan for. Not necessarily a subset of
+            ``services``: ``pm5_proprietary_profile()`` advertises ``ce060000``
+            for discovery (the app's scan filter) without serving it, since
+            it is absent from ``ble_services.yaml``.
         advertised_service_data: Service Data AD structures to include, keyed
             by short (16-bit) UUID string. The real PM5 advertises Fitness
             Machine Service Data (machine type = rower); the Concept2 app was
@@ -142,7 +145,7 @@ class GattProfile:
         """
         wanted = uuid.lower()
         for characteristic in self:
-            if characteristic.uuid == wanted:
+            if characteristic.uuid.lower() == wanted:
                 return characteristic
         raise UnknownCharacteristicError(uuid)
 

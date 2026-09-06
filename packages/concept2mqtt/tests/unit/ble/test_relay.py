@@ -495,6 +495,30 @@ class TestNotificationFailureIsolation:
 
         assert relay.stats.notify_errors == 1
 
+    async def test_forward_ms_mean_counts_failed_attempts_too(
+        self, central: FakeCentralLink
+    ) -> None:
+        """A failed forward still spent time in ``notify()`` and must count.
+
+        Technique: Boundary Value Analysis — dividing by only the successful
+        deliveries would inflate the mean whenever ``notify_errors`` is
+        nonzero, since ``forward_seconds_total`` accumulates for every
+        attempt regardless of outcome.
+        """
+        peripheral = FakePeripheralServer()
+        relay = BleRelay(central=central, peripheral=peripheral, profile=get_profile())
+        await relay.start()
+        peripheral.subscribe_all()
+
+        await central.emit(GENERAL_STATUS, b"\x00")
+        peripheral.notify_error = RuntimeError("disconnected")
+        await central.emit(GENERAL_STATUS, b"\x01")
+
+        assert relay.stats.notifications_relayed == 1
+        assert relay.stats.notify_errors == 1
+        expected_mean = 1000 * relay.stats.forward_seconds_total / 2
+        assert relay.stats.forward_ms_mean == pytest.approx(expected_mean)
+
 
 # =============================================================================
 # Consumer -> PM5 (writes)

@@ -135,6 +135,29 @@ class TestGattProfileLookup:
     ) -> None:
         assert profile.characteristic("OTHER").uuid == "other"
 
+    def test_characteristic_lookup_normalizes_a_stored_uuid_too(self) -> None:
+        """The documented contract is case-insensitive on both sides.
+
+        Technique: Error Guessing — a profile built with a non-lowercased
+        UUID (any caller not already routing through ``pm5_uuid``/``sig_uuid``,
+        both of which happen to emit lowercase) must still be found.
+        """
+        profile = GattProfile(
+            name="test",
+            device_name="PM5",
+            services=(
+                Service(
+                    uuid="svc",
+                    name="Test Service",
+                    characteristics=(
+                        Characteristic("MiXeD", "Mixed", CharProperty.READ, 1),
+                    ),
+                ),
+            ),
+            advertised_service_uuids=("svc",),
+        )
+        assert profile.characteristic("mixed").name == "Mixed"
+
     def test_characteristic_lookup_raises_for_unknown_uuid(
         self, profile: GattProfile
     ) -> None:

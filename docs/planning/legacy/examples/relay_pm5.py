@@ -57,7 +57,6 @@ from dataclasses import replace
 
 from bleak import BleakClient, BleakScanner
 from bluez_peripheral.advert import Advertisement
-from bluez_peripheral.agent import NoIoAgent
 from bluez_peripheral.gatt.characteristic import CharacteristicFlags as CharFlags
 from bluez_peripheral.gatt.characteristic import characteristic
 from bluez_peripheral.gatt.service import Service, ServiceCollection
@@ -97,6 +96,12 @@ SCAN_TIMEOUT = 15.0
 STATS_INTERVAL = 10.0
 MODEL_NUMBER_UUID = pm5_uuid(0x0011)
 SERIAL_NUMBER_UUID = pm5_uuid(0x0012)
+
+_ADAPTER_INTERFACE = "org.bluez.Adapter1"
+_ADVERT_MANAGER_INTERFACE = "org.bluez.LEAdvertisingManager1"
+_OBJECT_MANAGER_INTERFACE = "org.freedesktop.DBus.ObjectManager"
+#: bluez-peripheral's default advertisement path, needed to unregister it.
+_ADVERT_PATH = "/com/spacecheese/bluez_peripheral/advert0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -164,6 +169,7 @@ class BluezPeripheralServer:
         self._bus = None
         self._collection: ServiceCollection | None = None
         self._advert: Advertisement | None = None
+        self._advert_manager = None
 
     async def start(
         self,
@@ -179,9 +185,11 @@ class BluezPeripheralServer:
                 self._values[entry.uuid] = await on_read(entry.uuid)
 
         self._bus = await get_message_bus()
-        await NoIoAgent().register(self._bus)
+        # Deliberately no pairing agent: a bonded consumer is the failure mode
+        # this relay cannot recover from (see _make_non_bondable).
         adapter = await self._resolve_adapter()
-        await adapter.set_powered(True)
+        await self._reset_adapter(adapter)
+        await self._make_non_bondable(adapter)
         await adapter.set_alias(profile.device_name)
 
         self._collection = ServiceCollection(
@@ -206,7 +214,8 @@ class BluezPeripheralServer:
             0,
             serviceData=dict(profile.advertised_service_data),
         )
-        await self._advert.register(self._bus, adapter)
+        await self._advert.register(self._bus, adapter, path=_ADVERT_PATH)
+        self._advert_manager = adapter._proxy.get_interface(_ADVERT_MANAGER_INTERFACE)
         log.info(
             "Advertising %r on %s as %s",
             profile.device_name,
@@ -253,14 +262,61 @@ class BluezPeripheralServer:
         self._characteristics[uuid].changed(data)
 
     async def stop(self) -> None:
-        if self._advert is not None:
-            with contextlib.suppress(Exception):
-                self._advert.release()
+        """Hand the advertisement and GATT application back to BlueZ.
+
+        Both unregistrations must actually happen: BlueZ keeps a crashed
+        relay's registrations, and the next RegisterAdvertisement then fails
+        with "Failed to register advertisement" until the adapter is bounced.
+        """
+        if self._advert_manager is not None:
+            try:
+                await self._advert_manager.call_unregister_advertisement(_ADVERT_PATH)
+            except Exception:
+                log.warning("Could not unregister the advertisement", exc_info=True)
         if self._collection is not None:
-            with contextlib.suppress(Exception):
-                self._collection.unregister()
+            try:
+                await self._collection.unregister()
+            except Exception:
+                log.warning("Could not unregister the GATT services", exc_info=True)
         if self._bus is not None:
             self._bus.disconnect()
+
+    async def _reset_adapter(self, adapter: Adapter) -> None:
+        """Power-cycle the adapter to drop registrations left by a crash.
+
+        The scripted equivalent of ``hciconfig <hci> down && hciconfig <hci>
+        up``, which the manual validation procedure needed before every
+        restart.
+        """
+        await adapter.set_powered(False)
+        await adapter.set_powered(True)
+
+    async def _make_non_bondable(self, adapter: Adapter) -> None:
+        """Refuse bonding, and forget any bond an earlier run stored.
+
+        The emulated GATT database gets its attribute handles from BlueZ at
+        registration time, so the layout can shift between runs. A bonded iOS
+        client trusts its cached layout and skips re-discovery, and the
+        connection then never completes — recoverable in the 2026-09-05 run
+        only by wiping the bond on both sides. Not bonding at all keeps iOS
+        re-discovering on every connect, and removes the pairing prompt the
+        real PM5 does not show either. See R-PAIR-1 / R-GATT-STABLE-1.
+        """
+        interface = adapter._proxy.get_interface(_ADAPTER_INTERFACE)
+        await interface.set_pairable(False)
+        await interface.set_discoverable(False)
+
+        adapter_path = adapter._proxy.path
+        introspection = await self._bus.introspect("org.bluez", "/")
+        root = self._bus.get_proxy_object("org.bluez", "/", introspection)
+        objects = await root.get_interface(
+            _OBJECT_MANAGER_INTERFACE
+        ).call_get_managed_objects()
+        for path in objects:
+            if path.startswith(f"{adapter_path}/dev_"):
+                log.info("Forgetting bonded device %s", path)
+                with contextlib.suppress(DBusError):
+                    await interface.call_remove_device(path)
 
     async def _resolve_adapter(self) -> Adapter:
         # Not Adapter.get_all(): it wraps every child node under /org/bluez

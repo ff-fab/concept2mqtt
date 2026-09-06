@@ -65,6 +65,32 @@ warned UUIDs, they are candidates for the known-gap list in Step E.
 Every 10 s the script logs `RelayStats(...)`. Use those counters as the
 objective evidence for the criteria below.
 
+### 2.1 Restarting the relay
+
+Stop it with `SIGINT`, never `SIGKILL`, so it runs its shutdown:
+
+```bash
+pkill -INT -f 'relay_pm5.py --central'
+```
+
+A clean shutdown unregisters the advertisement and the GATT application, and
+startup power-cycles the peripheral adapter and forgets any device bonded to
+it — so the bond-wipe dance the 2026-09-05 run needed between restarts
+(`rm -rf /var/lib/bluetooth/...`, `systemctl restart bluetooth`, "Forget This
+Device") should no longer be necessary. The relay is now **non-bondable**: the
+iPhone should connect without a pairing prompt and re-discover the GATT
+database every time.
+
+If the app still fails to connect after a restart, that is a regression of
+`c2m-ooz.3.2` — record it before falling back to the manual wipe.
+
+The PM5 also stays connected on `hci0` after an ungraceful kill, and will then
+not be found by the next run's scan:
+
+```bash
+bluetoothctl disconnect <PM5-address>
+```
+
 ---
 
 ## 3. Step B — Confirm which service the app queries

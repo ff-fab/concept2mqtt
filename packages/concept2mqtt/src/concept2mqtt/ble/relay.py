@@ -9,9 +9,10 @@ second adapter) and moves opaque bytes between them.
 The relay deliberately does not decode CSAFE. Decoding belongs to the MQTT
 publishing path, which taps the same notification stream via ``tap``.
 
-Peripheral-side reads and writes are logged at ``DEBUG``. Because the Pi is
-itself the GATT server the app connects to, that log is the record of which
-UUIDs a connecting app touched — no external BLE sniffer needed. See
+Because the Pi is itself the GATT server the app connects to, the relay's log
+is the record of which UUIDs a connecting app touched — no external BLE
+sniffer needed. Reads and writes are logged at ``DEBUG``; subscriptions, which
+decide what actually goes on the air, at ``INFO``. See
 ``docs/testing/pm5-ble-relay-hardware-validation.md``.
 """
 
@@ -20,6 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Protocol
 
 from concept2mqtt.ble.errors import CharacteristicAccessError
@@ -72,16 +74,38 @@ class PeripheralServer(Protocol):
         """Push a notification to the connected consumer."""
         ...
 
+    def is_subscribed(self, uuid: str) -> bool:
+        """Whether the connected consumer has enabled ``uuid``'s CCCD."""
+        ...
+
 
 @dataclass(slots=True)
 class RelayStats:
-    """Counters describing relay throughput, for hardware validation runs."""
+    """Counters describing relay throughput, for hardware validation runs.
+
+    ``notifications_withheld`` and the two ``forward_seconds`` fields exist to
+    attribute end-to-end latency: the 2026-09-05 run could tell that the relay
+    added ~1 s over a direct connection but not where it went, because a
+    forward that the peripheral silently discarded (consumer not subscribed)
+    counted the same as one that reached the air.
+    """
 
     notifications_relayed: int = 0
+    notifications_withheld: int = 0
     writes_relayed: int = 0
+    write_errors: int = 0
     reads_served: int = 0
     notify_errors: int = 0
     unavailable_characteristics: int = 0
+    forward_seconds_total: float = 0.0
+    forward_seconds_max: float = 0.0
+
+    @property
+    def forward_ms_mean(self) -> float:
+        """Mean time spent handing a notification to the peripheral, in ms."""
+        if not self.notifications_relayed:
+            return 0.0
+        return 1000 * self.forward_seconds_total / self.notifications_relayed
 
 
 class BleRelay:
@@ -116,6 +140,7 @@ class BleRelay:
         self._cache: dict[str, bytes] = {}
         self._streaming = tuple(c.uuid for c in profile if c.streaming)
         self._subscribed: list[str] = []
+        self._consumer_subscribed: set[str] = set()
         self.stats = RelayStats()
 
     @property
@@ -123,13 +148,26 @@ class BleRelay:
         """UUIDs currently subscribed to on the PM5."""
         return tuple(self._subscribed)
 
+    @property
+    def consumer_subscribed(self) -> frozenset[str]:
+        """UUIDs the connected consumer has subscribed to via its CCCDs."""
+        return frozenset(self._consumer_subscribed)
+
     async def start(self) -> None:
-        """Subscribe to PM5 notifications, then start advertising as a PM5.
+        """Start advertising as a PM5, then subscribe to PM5 notifications.
+
+        The peripheral is registered first so that it can accept the very
+        first notification: subscribing on the central beforehand made the
+        PM5's opening burst arrive at a GATT server that did not exist yet,
+        and the 2026-09-05 hardware run lost ~5 s of telemetry that way.
 
         Characteristics the connected PM5 firmware does not implement are
         skipped with a warning: the spec marks several as firmware-dependent,
         and one missing stream must not cost the app every other one.
         """
+        await self._peripheral.start(
+            self._profile, on_read=self._on_read, on_write=self._on_write
+        )
         for uuid in self._streaming:
             try:
                 await self._central.start_notify(uuid, self._on_notification)
@@ -138,9 +176,6 @@ class BleRelay:
                 log.warning("PM5 does not stream %s; skipping", uuid, exc_info=True)
             else:
                 self._subscribed.append(uuid)
-        await self._peripheral.start(
-            self._profile, on_read=self._on_read, on_write=self._on_write
-        )
         log.info(
             "BLE relay started: profile=%s services=%d streaming=%d/%d",
             self._profile.name,
@@ -156,20 +191,53 @@ class BleRelay:
             await self._central.stop_notify(self._subscribed.pop())
         log.info("BLE relay stopped: %s", self.stats)
 
+    def _consumer_wants(self, uuid: str) -> bool:
+        """Whether to forward ``uuid``, logging every change of mind.
+
+        Which characteristics the Concept2 app actually subscribes to was an
+        open question after the 2026-09-05 run, so each transition is logged
+        at INFO — the answer is then in any relay log, not just a DEBUG one.
+        """
+        subscribed = self._peripheral.is_subscribed(uuid)
+        if subscribed != (uuid in self._consumer_subscribed):
+            verb = "subscribed to" if subscribed else "unsubscribed from"
+            log.info("Consumer %s %s", verb, uuid)
+            if subscribed:
+                self._consumer_subscribed.add(uuid)
+            else:
+                self._consumer_subscribed.discard(uuid)
+        return subscribed
+
     async def _on_notification(self, uuid: str, data: bytes) -> None:
         """Forward a PM5 notification to the emulated peripheral and the tap.
+
+        Only characteristics the consumer subscribed to are forwarded. The
+        peripheral would discard the rest anyway, but silently, which made the
+        relay counters overstate what actually reached the air.
+
+        The tap always sees the notification: MQTT publishing does not depend
+        on a consumer being connected.
 
         Delivery failures are counted and logged rather than raised: a consumer
         that has disconnected or stalled must not tear down the sole PM5 link.
         """
         payload = bytes(data)
-        try:
-            await self._peripheral.notify(uuid, payload)
-        except Exception:
-            self.stats.notify_errors += 1
-            log.warning("Dropped notification for %s", uuid, exc_info=True)
+        if self._consumer_wants(uuid):
+            started = perf_counter()
+            try:
+                await self._peripheral.notify(uuid, payload)
+            except Exception:
+                self.stats.notify_errors += 1
+                log.warning("Dropped notification for %s", uuid, exc_info=True)
+            else:
+                self.stats.notifications_relayed += 1
+            elapsed = perf_counter() - started
+            self.stats.forward_seconds_total += elapsed
+            self.stats.forward_seconds_max = max(
+                self.stats.forward_seconds_max, elapsed
+            )
         else:
-            self.stats.notifications_relayed += 1
+            self.stats.notifications_withheld += 1
         if self._tap is not None:
             await self._tap(uuid, payload)
 
@@ -207,12 +275,39 @@ class BleRelay:
         )
         if not characteristic.writable:
             raise CharacteristicAccessError(uuid, "write")
+        if len(data) > characteristic.max_length:
+            # Forwarded unmodified regardless — this is a byte-level relay —
+            # but the PM5 will likely answer an over-long write with an ATT
+            # Invalid Attribute Value Length. The Concept2 app writes 8 bytes
+            # to the 1-byte sample-rate characteristic, which is the leading
+            # explanation for the PM5 staying at 1 Hz through the relay.
+            log.warning(
+                "Consumer wrote %d bytes to %s (%s), which holds %d",
+                len(data),
+                characteristic.uuid,
+                characteristic.name,
+                characteristic.max_length,
+            )
         payload = bytes(data)
-        await self._central.write(
-            characteristic.uuid,
-            payload,
-            response=characteristic.write_with_response,
-        )
+        try:
+            await self._central.write(
+                characteristic.uuid,
+                payload,
+                response=characteristic.write_with_response,
+            )
+        except Exception:
+            # Counted and re-raised: the consumer must see the failure, and the
+            # count is the evidence for whether a rejected write is what keeps
+            # the PM5 at its slow default notification rate (R-LATENCY-5).
+            self.stats.write_errors += 1
+            log.warning(
+                "PM5 rejected a %d-byte write to %s (%s)",
+                len(payload),
+                characteristic.uuid,
+                characteristic.name,
+                exc_info=True,
+            )
+            raise
         if characteristic.readable:
             self._cache[characteristic.uuid] = payload
         self.stats.writes_relayed += 1

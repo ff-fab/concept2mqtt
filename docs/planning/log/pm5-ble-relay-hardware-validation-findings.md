@@ -517,3 +517,82 @@ _pending — 20-minute continuous piece, app backgrounding, reconnect_
   curve) MUST relay unmodified — confirmed working this run.
 - **R-LOGBOOK-1** Validate end-to-end logbook capture with a non-trivial piece
   before declaring Step C fully passed.
+
+---
+
+## 14. Fixes landed 2026-09-06 (not yet hardware-verified)
+
+Written against this log, in the dev container — the Pi was unreachable, so
+**none of this is confirmed on hardware**. The `c2m-ooz.3.3` re-run is what
+validates it.
+
+### 14.1 `c2m-ooz.3.2` — connection unstable across restarts
+
+Three defects in the peripheral binding, all in `relay_pm5.py`:
+
+| # | Defect | Effect |
+| --- | --- | --- |
+| 1 | `NoIoAgent` was registered, adapter left bondable | iOS bonded, then trusted its cached attribute layout instead of re-discovering — the §8 trap |
+| 2 | `stop()` called `Advertisement.release()`, which **does not exist** in bluez-peripheral; `contextlib.suppress` swallowed the `AttributeError` | the advertisement was never unregistered, even on a clean `SIGINT` |
+| 3 | `stop()` called the **async** `ServiceCollection.unregister()` without awaiting it | the GATT application was never unregistered either |
+
+Defects 2 and 3 are why §8's "ungraceful kill leaves a stale advertising
+registration" was really "*every* shutdown leaves one".
+
+Fixes: no pairing agent, `Pairable=false`, forget devices already bonded to the
+peripheral adapter at startup, power-cycle the adapter on startup (the scripted
+`hciconfig down/up`), and unregister both the advert (via
+`LEAdvertisingManager1`) and the GATT application on shutdown, logging failures
+instead of suppressing them.
+
+**Expected at the next run:** no pairing prompt, no bond, and a relay restart
+that needs no wipe on either side. If the app still fails to connect after a
+restart, R-GATT-STABLE-1 (fixed handles / Service Changed) is the remaining
+cause and `c2m-ooz.3.2` should be reopened against it.
+
+### 14.2 `c2m-ooz.3.1` — ~1 s added latency
+
+The root cause is **not** established, and this run's instrumentation could not
+have established it: `notifications_relayed` counted every forward, including
+the ones bluez-peripheral silently discarded because the consumer had not
+subscribed. So the §11 per-UUID table shows what the relay *pushed*, not what
+reached the air, and the "relay software path" row in §11.1 was never measured
+at all. Changes are therefore split between removing a known cost and making
+the rest measurable.
+
+Removed:
+
+- `--debug` raised the **root** logger, which turned on bleak's and dbus-next's
+  DEBUG output — a line written synchronously to disk per BLE notification, on
+  the forward path (the ~5 MB log in §11.1). It now raises only `relay` and
+  `concept2mqtt`. This is R-LATENCY-2, and it was worse than §11.1 assumed:
+  the volume came from the libraries, not from our own handlers.
+- The startup ordering that caused Defect A1: the peripheral is registered
+  before the central subscribes, so the PM5's opening burst has somewhere to
+  go (R-RELAY-1).
+
+Made measurable:
+
+- Notifications are forwarded only to characteristics the consumer actually
+  subscribed to; `notifications_withheld` counts the rest, and each
+  subscribe/unsubscribe is logged at INFO. **This answers open question §9 #1
+  directly** — the next run's log says which streams the app uses.
+- `forward_seconds_total` / `forward_seconds_max` (reported as
+  `forward_ms(mean=… max=…)`) isolate the relay's own software path, the
+  unmeasured row of the §11.1 table.
+- `write_errors` counts writes the PM5 rejected, and the relay now warns when
+  a consumer writes more bytes than the characteristic holds. **This is the
+  test for hypothesis 1**: the app's 8-byte write to the 1-byte `ce060034`
+  (spec: `bytes: 1`) should now show up as both a warning and a rejection. The
+  relay previously dispatched writes fire-and-forget and never looked at the
+  result, so a PM5 rejection was invisible while the app got an ACK from the
+  Pi. A 1-byte write from the relay *did* take effect (§11.1a read back
+  `0x03`), so an over-long write being refused is consistent with everything
+  observed.
+
+**Next run should record:** `forward_ms` mean/max, `notifications_withheld` vs
+`notifications_relayed`, `write_errors`, the subscribe lines, and whether the
+over-length warning fires on `ce060034`. If `write_errors` climbs with
+`ce060034` and the PM5 stays at 1 Hz, hypothesis 1 is confirmed and the fix is
+a relay-side sample-rate translation — which R-LATENCY-1 currently forbids, so
+that requirement would need revisiting.

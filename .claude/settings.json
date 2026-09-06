@@ -41,7 +41,10 @@
       "Bash(gh run watch *)",
       "Bash(gh repo view *)",
       "Bash(gh search *)",
-      "Bash(gh status *)"
+      "Bash(gh status *)",
+      "Bash(bd list *)",
+      "Bash(bd stats *)",
+      "Bash(bd show *)"
     ],
     "deny": ["Bash(python *)", "Bash(python3 *)"]
   }

@@ -170,6 +170,7 @@ class BluezPeripheralServer:
         self._collection: ServiceCollection | None = None
         self._advert: Advertisement | None = None
         self._advert_manager = None
+        self._writes: set[asyncio.Task] = set()
 
     async def start(
         self,
@@ -254,12 +255,30 @@ class BluezPeripheralServer:
     ) -> Callable[[object, bytes, object], None]:
         def setter(_service: object, data: bytes, _options: object) -> None:
             # Fire-and-forget: the D-Bus handler must not block the event loop.
-            asyncio.get_running_loop().create_task(on_write(uuid, bytes(data)))
+            # The task is kept and its result inspected, because the PM5
+            # rejecting a relayed write is otherwise invisible — the consumer
+            # has already been acknowledged by the Pi.
+            task = asyncio.get_running_loop().create_task(on_write(uuid, bytes(data)))
+            self._writes.add(task)
+            task.add_done_callback(self._writes.discard)
+            task.add_done_callback(self._log_write_failure)
 
         return setter
 
+    @staticmethod
+    def _log_write_failure(task: asyncio.Task) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            log.error("Relayed write failed", exc_info=task.exception())
+
     async def notify(self, uuid: str, data: bytes) -> None:
         self._characteristics[uuid].changed(data)
+
+    def is_subscribed(self, uuid: str) -> bool:
+        # bluez-peripheral records the consumer's CCCD writes on the
+        # characteristic and silently discards notifications for the rest, so
+        # this is the only place the relay can see what the app subscribed to.
+        char = self._characteristics.get(uuid)
+        return char is not None and char._notify
 
     async def stop(self) -> None:
         """Hand the advertisement and GATT application back to BlueZ.
@@ -368,7 +387,12 @@ async def _report(relay: BleRelay) -> None:
     """Log relay counters periodically as evidence for the validation run."""
     while True:
         await asyncio.sleep(STATS_INTERVAL)
-        log.info("%s", relay.stats)
+        log.info(
+            "%s forward_ms(mean=%.2f max=%.2f)",
+            relay.stats,
+            relay.stats.forward_ms_mean,
+            1000 * relay.stats.forward_seconds_max,
+        )
 
 
 async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) -> None:
@@ -411,7 +435,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+        # Only this relay's own loggers. Raising the root logger also turns on
+        # bleak's and dbus-next's DEBUG output, which writes a line per BLE
+        # notification synchronously to disk — ~5 MB in one session on
+        # 2026-09-05, on the forward path the same run measured as too slow.
+        for name in ("relay", "concept2mqtt"):
+            logging.getLogger(name).setLevel(logging.DEBUG)
     try:
         asyncio.run(run(args.central, args.peripheral, args.profile))
     except KeyboardInterrupt:

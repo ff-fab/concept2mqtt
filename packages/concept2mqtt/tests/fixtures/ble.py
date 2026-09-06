@@ -22,10 +22,16 @@ class FakeCentralLink:
         values: Characteristic values the fake PM5 will return on read.
         unavailable: UUIDs whose subscription fails, simulating a firmware
             version that does not implement that characteristic.
+        write_error: When set, every ``write`` raises it, simulating a PM5
+            that rejects the relayed payload.
+        events: Shared lifecycle log, for asserting ordering against the
+            peripheral's own events.
     """
 
     values: dict[str, bytes] = field(default_factory=dict)
     unavailable: set[str] = field(default_factory=set)
+    write_error: Exception | None = None
+    events: list[str] = field(default_factory=list)
     writes: list[tuple[str, bytes, bool]] = field(default_factory=list)
     subscriptions: dict[str, NotifyCallback] = field(default_factory=dict)
     reads: list[str] = field(default_factory=list)
@@ -35,9 +41,12 @@ class FakeCentralLink:
         return self.values[uuid]
 
     async def write(self, uuid: str, data: bytes, *, response: bool) -> None:
+        if self.write_error is not None:
+            raise self.write_error
         self.writes.append((uuid, data, response))
 
     async def start_notify(self, uuid: str, callback: NotifyCallback) -> None:
+        self.events.append("central:start_notify")
         if uuid in self.unavailable:
             raise RuntimeError(f"characteristic {uuid} not implemented by firmware")
         self.subscriptions[uuid] = callback
@@ -61,9 +70,15 @@ class FakePeripheralServer:
     Args:
         notify_error: When set, every ``notify`` call raises it, simulating a
             consumer that has disconnected or a stalled D-Bus link.
+        subscribed: UUIDs whose CCCD the connected consumer has enabled. A
+            real peripheral discards notifications for anything else.
+        events: Shared lifecycle log, for asserting ordering against the
+            central's own events.
     """
 
     notify_error: Exception | None = None
+    subscribed: set[str] = field(default_factory=set)
+    events: list[str] = field(default_factory=list)
     profile: GattProfile | None = None
     running: bool = False
     notifications: list[tuple[str, bytes]] = field(default_factory=list)
@@ -77,6 +92,7 @@ class FakePeripheralServer:
         on_read: Callable[[str], Awaitable[bytes]],
         on_write: Callable[[str, bytes], Awaitable[None]],
     ) -> None:
+        self.events.append("peripheral:start")
         self.profile = profile
         self.on_read = on_read
         self.on_write = on_write
@@ -89,6 +105,14 @@ class FakePeripheralServer:
         if self.notify_error is not None:
             raise self.notify_error
         self.notifications.append((uuid, data))
+
+    def is_subscribed(self, uuid: str) -> bool:
+        return uuid in self.subscribed
+
+    def subscribe_all(self) -> None:
+        """Simulate a consumer subscribing to every notifiable characteristic."""
+        assert self.profile is not None, "server not started"
+        self.subscribed = {c.uuid for c in self.profile if c.streaming}
 
     async def read(self, uuid: str) -> bytes:
         """Simulate a connected consumer reading ``uuid``."""

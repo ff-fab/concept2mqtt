@@ -54,9 +54,15 @@ def relay(central: FakeCentralLink, peripheral: FakePeripheralServer) -> BleRela
 
 
 @pytest.fixture
-async def started_relay(relay: BleRelay) -> BleRelay:
-    """Relay that has completed startup."""
+async def started_relay(relay: BleRelay, peripheral: FakePeripheralServer) -> BleRelay:
+    """Relay running with a consumer subscribed to every stream.
+
+    The steady state of a rowing session: notifications are only forwarded to
+    a consumer that asked for them, so most relay behaviour is only observable
+    once the CCCDs are enabled.
+    """
     await relay.start()
+    peripheral.subscribe_all()
     return relay
 
 
@@ -66,10 +72,29 @@ async def started_relay(relay: BleRelay) -> BleRelay:
 
 
 class TestLifecycle:
-    """Startup subscribes to the PM5 before advertising; stop unwinds both.
+    """Startup advertises before subscribing to the PM5; stop unwinds both.
 
     Technique: State Transition Testing — idle -> started -> stopped.
     """
+
+    async def test_peripheral_is_registered_before_the_pm5_streams(self) -> None:
+        """The PM5's opening burst must find a GATT server that already exists.
+
+        Technique: State Transition Testing — subscribing first cost the
+        2026-09-05 hardware run ~5 s of telemetry, because the first
+        notifications had nowhere to go (R-RELAY-1).
+        """
+        events: list[str] = []
+        relay = BleRelay(
+            central=FakeCentralLink(events=events),
+            peripheral=FakePeripheralServer(events=events),
+            profile=get_profile(),
+        )
+
+        await relay.start()
+
+        assert events[0] == "peripheral:start"
+        assert "central:start_notify" in events[1:]
 
     async def test_start_subscribes_to_every_streaming_characteristic(
         self, started_relay: BleRelay, central: FakeCentralLink
@@ -270,12 +295,109 @@ class TestNotificationTap:
             tap=tap,
         )
         await relay.start()
+        peripheral.subscribe_all()
 
         await central.emit(GENERAL_STATUS, b"\x2a")
 
         assert tapped == [(GENERAL_STATUS, b"\x2a")]
         assert relay.stats.notify_errors == 1
         assert relay.stats.notifications_relayed == 0
+
+
+class TestConsumerSubscriptionGating:
+    """Only characteristics the consumer subscribed to are forwarded.
+
+    The peripheral discards the rest anyway, but silently, so the relay's own
+    counters overstated what reached the air during the 2026-09-05 run and
+    left "which streams does the app use?" unanswerable.
+
+    Technique: Decision Table Testing — subscribed x notification arrives.
+    """
+
+    async def test_unsubscribed_notification_is_withheld(
+        self,
+        relay: BleRelay,
+        central: FakeCentralLink,
+        peripheral: FakePeripheralServer,
+    ) -> None:
+        await relay.start()
+
+        await central.emit(GENERAL_STATUS, b"\x01")
+
+        assert peripheral.notifications == []
+        assert relay.stats.notifications_withheld == 1
+        assert relay.stats.notifications_relayed == 0
+
+    async def test_subscribing_starts_the_forwarding(
+        self,
+        relay: BleRelay,
+        central: FakeCentralLink,
+        peripheral: FakePeripheralServer,
+    ) -> None:
+        await relay.start()
+        await central.emit(GENERAL_STATUS, b"\x01")
+
+        peripheral.subscribed = {GENERAL_STATUS}
+        await central.emit(GENERAL_STATUS, b"\x02")
+
+        assert peripheral.notifications == [(GENERAL_STATUS, b"\x02")]
+        assert relay.consumer_subscribed == frozenset({GENERAL_STATUS})
+
+    async def test_unsubscribing_stops_the_forwarding(
+        self,
+        started_relay: BleRelay,
+        central: FakeCentralLink,
+        peripheral: FakePeripheralServer,
+    ) -> None:
+        await central.emit(GENERAL_STATUS, b"\x01")
+
+        peripheral.subscribed.clear()
+        await central.emit(GENERAL_STATUS, b"\x02")
+
+        assert peripheral.notifications == [(GENERAL_STATUS, b"\x01")]
+        assert started_relay.consumer_subscribed == frozenset()
+
+    async def test_withheld_notification_still_reaches_the_tap(
+        self, central: FakeCentralLink
+    ) -> None:
+        """MQTT publishing does not depend on a consumer being connected."""
+        tapped: list[tuple[str, bytes]] = []
+
+        async def tap(uuid: str, data: bytes) -> None:
+            tapped.append((uuid, data))
+
+        relay = BleRelay(
+            central=central,
+            peripheral=FakePeripheralServer(),
+            profile=get_profile(),
+            tap=tap,
+        )
+        await relay.start()
+
+        await central.emit(GENERAL_STATUS, b"\x2a")
+
+        assert tapped == [(GENERAL_STATUS, b"\x2a")]
+        assert relay.stats.notifications_relayed == 0
+
+    async def test_forward_timing_is_recorded_for_relayed_notifications(
+        self, started_relay: BleRelay, central: FakeCentralLink
+    ) -> None:
+        """Attributing end-to-end lag needs the relay's own share measured.
+
+        Technique: Specification-based Testing — R-LATENCY-4 needs the relay's
+        added latency separated from the PM5's cadence and the BLE hops.
+        """
+        await central.emit(GENERAL_STATUS, b"\x01")
+
+        assert started_relay.stats.forward_seconds_total > 0
+        assert started_relay.stats.forward_seconds_max > 0
+        assert started_relay.stats.forward_ms_mean > 0
+
+    async def test_forward_timing_is_zero_before_anything_is_relayed(
+        self, started_relay: BleRelay
+    ) -> None:
+        """Technique: Boundary Value Analysis — mean over zero samples."""
+        assert started_relay.stats.forward_ms_mean == 0.0
 
 
 class TestNotificationFailureIsolation:
@@ -291,6 +413,7 @@ class TestNotificationFailureIsolation:
         peripheral = FakePeripheralServer(notify_error=RuntimeError("disconnected"))
         relay = BleRelay(central=central, peripheral=peripheral, profile=get_profile())
         await relay.start()
+        peripheral.subscribe_all()
 
         await central.emit(GENERAL_STATUS, b"\x00")
 
@@ -351,6 +474,76 @@ class TestWriteRelay:
     ) -> None:
         with pytest.raises(UnknownCharacteristicError):
             await peripheral.write("00000000-0000-0000-0000-000000000000", b"\x00")
+
+
+class TestRejectedWriteVisibility:
+    """A write the PM5 refuses must not look like a write it accepted.
+
+    The Concept2 app writes 8 bytes to the 1-byte sample-rate characteristic.
+    If the PM5 rejects that, it stays at its slow default notification rate,
+    which is the leading explanation for the ~1 s the relay added on
+    2026-09-05 — but the run had no counter that could show it.
+
+    Technique: Error Guessing — silent failure on the consumer -> PM5 path.
+    """
+
+    async def test_pm5_rejection_is_counted_and_raised(
+        self, peripheral: FakePeripheralServer, central: FakeCentralLink
+    ) -> None:
+        central.write_error = RuntimeError("invalid attribute value length")
+        relay = BleRelay(central=central, peripheral=peripheral, profile=get_profile())
+        await relay.start()
+
+        with pytest.raises(RuntimeError):
+            await peripheral.write(SAMPLE_RATE, b"\x03")
+
+        assert relay.stats.write_errors == 1
+        assert relay.stats.writes_relayed == 0
+
+    async def test_rejected_write_does_not_poison_the_read_cache(
+        self, peripheral: FakePeripheralServer, central: FakeCentralLink
+    ) -> None:
+        central.write_error = RuntimeError("rejected")
+        relay = BleRelay(central=central, peripheral=peripheral, profile=get_profile())
+        await relay.start()
+
+        with pytest.raises(RuntimeError):
+            await peripheral.write(SAMPLE_RATE, b"\x03")
+        central.write_error = None
+
+        assert await peripheral.read(SAMPLE_RATE) == b"\x01"
+
+    async def test_oversized_write_is_flagged_but_still_forwarded(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        central: FakeCentralLink,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Byte-level pass-through is the contract; the warning is the evidence.
+
+        Technique: Boundary Value Analysis — one byte over the declared length.
+        """
+        caplog.set_level(logging.WARNING, logger="concept2mqtt.ble.relay")
+
+        await peripheral.write(SAMPLE_RATE, b"\x00\x01")
+
+        assert central.writes == [(SAMPLE_RATE, b"\x00\x01", True)]
+        assert "wrote 2 bytes" in caplog.text
+        assert "which holds 1" in caplog.text
+
+    async def test_write_within_the_declared_length_is_not_flagged(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Technique: Boundary Value Analysis — exactly the declared length."""
+        caplog.set_level(logging.WARNING, logger="concept2mqtt.ble.relay")
+
+        await peripheral.write(SAMPLE_RATE, b"\x03")
+
+        assert caplog.text == ""
 
 
 # =============================================================================

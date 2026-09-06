@@ -51,6 +51,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import signal
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -511,6 +512,14 @@ async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) 
         # Called from bleak's thread/callback context, so hop to the loop.
         loop.call_soon_threadsafe(dropped.set)
 
+    # Explicit handlers, not KeyboardInterrupt: a relay started with setsid
+    # has no controlling terminal, and SIGINT was observed not to interrupt
+    # the running loop at all (2026-09-06). SIGTERM was never handled, so
+    # systemd would have killed it mid-session too. R-RELAY-3.
+    stop = asyncio.Event()
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signum, stop.set)
+
     client = await _connect_pm5(central_adapter, on_disconnect)
     # Impersonate the real erg's advertised name so the app sees a familiar PM5.
     profile = replace(profile, device_name=await _identity(client, profile.device_name))
@@ -519,7 +528,19 @@ async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) 
         peripheral=BluezPeripheralServer(peripheral_adapter),
         profile=profile,
     )
+
+    async def supervise() -> None:
+        """Rebind the relay onto a fresh PM5 link whenever the current one drops."""
+        nonlocal client
+        while True:
+            await dropped.wait()
+            dropped.clear()
+            log.warning("PM5 link dropped; reconnecting (peripheral stays up)...")
+            client = await _reconnect_pm5(central_adapter, on_disconnect)
+            await relay.rebind_central(BleakCentralLink(client))
+
     reporter = asyncio.create_task(_report(relay))
+    supervisor = asyncio.create_task(supervise())
     try:
         await relay.start()
         # The relay deliberately sets no sample-rate policy of its own: the
@@ -527,17 +548,19 @@ async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) 
         # is both overridden and (measured 2026-09-05) worse for latency on a
         # legacy-advertising link. See findings §11.1a / R-LATENCY-1.
         log.info("Relay live. Connect the Concept2 app to the advertised PM5.")
-        while True:
-            await dropped.wait()
-            dropped.clear()
-            log.warning("PM5 link dropped; reconnecting (peripheral stays up)...")
-            client = await _reconnect_pm5(central_adapter, on_disconnect)
-            await relay.rebind_central(BleakCentralLink(client))
+        await stop.wait()
+        log.info("Signal received; shutting down.")
     finally:
+        supervisor.cancel()
         reporter.cancel()
         with contextlib.suppress(Exception):
             await relay.stop()
-        await client.disconnect()
+        # Must succeed or the PM5 stays bonded to hci0 and the next run's scan
+        # cannot see it — the erg accepts only one connection (R-RELAY-3).
+        try:
+            await client.disconnect()
+        except Exception:
+            log.error("Could not disconnect the PM5", exc_info=True)
         log.info("Final counters: %s", relay.stats)
 
 

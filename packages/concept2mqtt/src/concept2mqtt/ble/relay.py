@@ -302,21 +302,30 @@ class BleRelay:
         )
         if not characteristic.writable:
             raise CharacteristicAccessError(uuid, "write")
-        if len(data) > characteristic.max_length:
-            # Forwarded unmodified regardless — this is a byte-level relay —
-            # but the PM5 will likely answer an over-long write with an ATT
-            # Invalid Attribute Value Length. The Concept2 app writes 8 bytes
-            # to the 1-byte sample-rate characteristic, which is the leading
-            # explanation for the PM5 staying at 1 Hz through the relay.
+        payload = bytes(data)
+        if len(payload) > characteristic.max_length:
+            # The real PM5 declares this characteristic's length, so a phone
+            # writing to the erg directly is constrained before the write goes
+            # out. The emulated server does not enforce it, so the consumer's
+            # full payload arrives here and the PM5 answers an ATT Invalid
+            # Attribute Value Length — silently discarding it.
+            #
+            # Measured 2026-09-06: the Concept2 app writes 02 00 00 00 00 00
+            # 00 00 to the 1-byte ce060034, i.e. a little-endian 64-bit 2,
+            # meaning a 250 ms sample rate. Rejected, so the PM5 stayed at its
+            # 1 Hz default and the app ran ~1 s behind. Clamping to the
+            # declared length is what the real erg's own length contract would
+            # have done (R-LATENCY-5).
             log.warning(
-                "Consumer wrote %d bytes to %s (%s), which holds %d: %s",
-                len(data),
+                "Consumer wrote %d bytes to %s (%s), which holds %d: %s"
+                " — truncating to fit",
+                len(payload),
                 characteristic.uuid,
                 characteristic.name,
                 characteristic.max_length,
-                bytes(data).hex(" "),
+                payload.hex(" "),
             )
-        payload = bytes(data)
+            payload = payload[: characteristic.max_length]
         try:
             await self._central.write(
                 characteristic.uuid,

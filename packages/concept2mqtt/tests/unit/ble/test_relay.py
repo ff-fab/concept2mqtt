@@ -589,27 +589,52 @@ class TestRejectedWriteVisibility:
 
         assert await peripheral.read(SAMPLE_RATE) == b"\x01"
 
-    async def test_oversized_write_is_flagged_but_still_forwarded(
+    async def test_oversized_write_is_truncated_to_the_declared_length(
         self,
         started_relay: BleRelay,
         peripheral: FakePeripheralServer,
         central: FakeCentralLink,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Byte-level pass-through is the contract; the warning is the evidence.
+        """The real erg's length contract is what the PM5 will accept.
 
         Technique: Boundary Value Analysis — one byte over the declared length.
         """
         caplog.set_level(logging.WARNING, logger="concept2mqtt.ble.relay")
 
-        await peripheral.write(SAMPLE_RATE, b"\x00\x01")
+        await peripheral.write(SAMPLE_RATE, b"\x02\x01")
 
-        assert central.writes == [(SAMPLE_RATE, b"\x00\x01", True)]
+        assert central.writes == [(SAMPLE_RATE, b"\x02", True)]
         assert "wrote 2 bytes" in caplog.text
         assert "which holds 1" in caplog.text
-        # The payload is the evidence: an over-long write is the app asking
-        # for something the relay is mistranslating, and the bytes say what.
-        assert "00 01" in caplog.text
+        # The payload is the evidence for why the write was out of contract.
+        assert "02 01" in caplog.text
+
+    async def test_the_apps_real_sample_rate_write_reaches_the_pm5(
+        self,
+        started_relay: BleRelay,
+        peripheral: FakePeripheralServer,
+        central: FakeCentralLink,
+    ) -> None:
+        """The exact payload captured from the Concept2 app on 2026-09-06.
+
+        A little-endian 64-bit 2 — a request for a 250 ms sample rate — into a
+        1-byte characteristic. Forwarded whole, the PM5 answered ATT 0x0D and
+        stayed at 1 Hz, which was the relay's entire ~1 s latency deficit.
+
+        Technique: Specification-based Testing — captured hardware payload.
+        """
+        await peripheral.write(SAMPLE_RATE, bytes([0x02, 0, 0, 0, 0, 0, 0, 0]))
+
+        assert central.writes == [(SAMPLE_RATE, b"\x02", True)]
+
+    async def test_truncated_write_caches_what_the_pm5_was_given(
+        self, started_relay: BleRelay, peripheral: FakePeripheralServer
+    ) -> None:
+        """A read-back must not report bytes the PM5 never accepted."""
+        await peripheral.write(SAMPLE_RATE, bytes([0x02, 0, 0, 0, 0, 0, 0, 0]))
+
+        assert await peripheral.read(SAMPLE_RATE) == b"\x02"
 
     async def test_write_within_the_declared_length_is_not_flagged(
         self,

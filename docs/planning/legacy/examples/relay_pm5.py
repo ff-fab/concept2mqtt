@@ -94,11 +94,15 @@ class _ServiceDataAdvertisement(Advertisement):
 PM5_NAME_PREFIX = "PM5"
 SCAN_TIMEOUT = 15.0
 STATS_INTERVAL = 10.0
+RECONNECT_MIN_SECONDS = 2.0
+RECONNECT_MAX_SECONDS = 60.0
+CONSUMER_POLL_SECONDS = 3.0
 MODEL_NUMBER_UUID = pm5_uuid(0x0011)
 SERIAL_NUMBER_UUID = pm5_uuid(0x0012)
 
 _ADAPTER_INTERFACE = "org.bluez.Adapter1"
 _ADVERT_MANAGER_INTERFACE = "org.bluez.LEAdvertisingManager1"
+_DEVICE_INTERFACE = "org.bluez.Device1"
 _OBJECT_MANAGER_INTERFACE = "org.freedesktop.DBus.ObjectManager"
 #: bluez-peripheral's default advertisement path, needed to unregister it.
 _ADVERT_PATH = "/com/spacecheese/bluez_peripheral/advert0"
@@ -170,6 +174,8 @@ class BluezPeripheralServer:
         self._collection: ServiceCollection | None = None
         self._advert: Advertisement | None = None
         self._advert_manager = None
+        self._adapter: Adapter | None = None
+        self._consumer_watch: asyncio.Task | None = None
         self._writes: set[asyncio.Task] = set()
 
     async def start(
@@ -216,7 +222,9 @@ class BluezPeripheralServer:
             serviceData=dict(profile.advertised_service_data),
         )
         await self._advert.register(self._bus, adapter, path=_ADVERT_PATH)
+        self._adapter = adapter
         self._advert_manager = adapter._proxy.get_interface(_ADVERT_MANAGER_INTERFACE)
+        self._consumer_watch = asyncio.create_task(self._watch_consumers())
         log.info(
             "Advertising %r on %s as %s",
             profile.device_name,
@@ -287,6 +295,10 @@ class BluezPeripheralServer:
         relay's registrations, and the next RegisterAdvertisement then fails
         with "Failed to register advertisement" until the adapter is bounced.
         """
+        if self._consumer_watch is not None:
+            self._consumer_watch.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._consumer_watch
         if self._advert_manager is not None:
             try:
                 await self._advert_manager.call_unregister_advertisement(_ADVERT_PATH)
@@ -299,6 +311,59 @@ class BluezPeripheralServer:
                 log.warning("Could not unregister the GATT services", exc_info=True)
         if self._bus is not None:
             self._bus.disconnect()
+
+    async def _connected_consumers(self) -> set[str]:
+        """Addresses currently connected to the peripheral adapter."""
+        introspection = await self._bus.introspect("org.bluez", "/")
+        root = self._bus.get_proxy_object("org.bluez", "/", introspection)
+        manager = root.get_interface(_OBJECT_MANAGER_INTERFACE)
+        objects = await manager.call_get_managed_objects()
+        prefix = f"{self._adapter._proxy.path}/dev_"
+        return {
+            path.rsplit("/", 1)[-1].removeprefix("dev_").replace("_", ":")
+            for path, interfaces in objects.items()
+            if path.startswith(prefix)
+            and interfaces.get(_DEVICE_INTERFACE, {}).get("Connected")
+            and interfaces[_DEVICE_INTERFACE]["Connected"].value
+        }
+
+    async def _watch_consumers(self) -> None:
+        """Log consumer connects/disconnects and keep the relay discoverable.
+
+        A connectable advertisement stops broadcasting once something
+        connects. Whether BlueZ resumes it on disconnect was never actually
+        established — the 2026-09-05 "device disappeared from the app's scan"
+        was confounded by the phone silently reattaching a bond, which is now
+        gone. Re-registering on the disconnect edge makes it true either way,
+        costs one advertisement churn per session, and the log settles the
+        question on the next run (R-OPS-3).
+        """
+        connected: set[str] = set()
+        while True:
+            await asyncio.sleep(CONSUMER_POLL_SECONDS)
+            try:
+                current = await self._connected_consumers()
+            except Exception:
+                log.warning("Consumer watch failed", exc_info=True)
+                continue
+            for address in current - connected:
+                log.info("Consumer connected: %s", address)
+            for address in connected - current:
+                log.info("Consumer disconnected: %s", address)
+            if connected and not current:
+                await self._resume_advertising()
+            connected = current
+
+    async def _resume_advertising(self) -> None:
+        """Re-register the advertisement after the last consumer leaves."""
+        # Already gone is exactly the case worth repairing, so ignore it.
+        with contextlib.suppress(DBusError):
+            await self._advert_manager.call_unregister_advertisement(_ADVERT_PATH)
+        try:
+            await self._advert.register(self._bus, self._adapter, path=_ADVERT_PATH)
+            log.info("Resumed advertising after consumer disconnect")
+        except Exception:
+            log.warning("Could not resume advertising", exc_info=True)
 
     async def _reset_adapter(self, adapter: Adapter) -> None:
         """Power-cycle the adapter to drop registrations left by a crash.
@@ -354,8 +419,10 @@ class BluezPeripheralServer:
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
-async def _connect_pm5(adapter: str) -> BleakClient:
-    """Scan for a PM5 on ``adapter`` and connect to it."""
+async def _find_and_connect(
+    adapter: str, on_disconnect: Callable[[BleakClient], None]
+) -> BleakClient | None:
+    """Scan for a PM5 on ``adapter`` and connect, or ``None`` if that fails."""
     log.info("Scanning for a PM5 on %s (%ss)...", adapter, SCAN_TIMEOUT)
     device = await BleakScanner.find_device_by_filter(
         lambda d, _adv: bool(d.name and PM5_NAME_PREFIX in d.name),
@@ -363,11 +430,50 @@ async def _connect_pm5(adapter: str) -> BleakClient:
         adapter=adapter,
     )
     if device is None:
-        raise SystemExit("No PM5 found — wake it with the handle and retry.")
+        return None
     log.info("Found %s (%s); connecting...", device.name, device.address)
-    client = BleakClient(device, adapter=adapter)
-    await client.connect()
+    client = BleakClient(device, adapter=adapter, disconnected_callback=on_disconnect)
+    try:
+        await client.connect()
+    except Exception:
+        log.warning("Could not connect to %s", device.address, exc_info=True)
+        return None
     return client
+
+
+async def _connect_pm5(
+    adapter: str, on_disconnect: Callable[[BleakClient], None]
+) -> BleakClient:
+    """Connect to the PM5, failing fast if it is not awake.
+
+    Only the first connection fails fast: the erg being asleep is a setup
+    mistake worth reporting immediately, whereas a drop mid-session is
+    something to ride out (see :func:`_reconnect_pm5`).
+    """
+    client = await _find_and_connect(adapter, on_disconnect)
+    if client is None:
+        raise SystemExit("No PM5 found — wake it with the handle and retry.")
+    return client
+
+
+async def _reconnect_pm5(
+    adapter: str, on_disconnect: Callable[[BleakClient], None]
+) -> BleakClient:
+    """Retry until the PM5 is back, backing off between attempts.
+
+    Never gives up: an erg that has gone to sleep mid-session comes back when
+    someone pulls the handle, and a relay that exited in the meantime is worse
+    than one that waits. The peripheral stays registered throughout, so the
+    consumer keeps its connection (R-RELAY-2).
+    """
+    delay = RECONNECT_MIN_SECONDS
+    while True:
+        client = await _find_and_connect(adapter, on_disconnect)
+        if client is not None:
+            return client
+        log.warning("PM5 not reachable; retrying in %.0fs", delay)
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, RECONNECT_MAX_SECONDS)
 
 
 async def _identity(client: BleakClient, fallback: str) -> str:
@@ -398,7 +504,14 @@ async def _report(relay: BleRelay) -> None:
 async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) -> None:
     """Connect to the PM5 and re-serve it until interrupted."""
     profile = get_profile(profile_name)
-    client = await _connect_pm5(central_adapter)
+    dropped = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def on_disconnect(_client: BleakClient) -> None:
+        # Called from bleak's thread/callback context, so hop to the loop.
+        loop.call_soon_threadsafe(dropped.set)
+
+    client = await _connect_pm5(central_adapter, on_disconnect)
     # Impersonate the real erg's advertised name so the app sees a familiar PM5.
     profile = replace(profile, device_name=await _identity(client, profile.device_name))
     relay = BleRelay(
@@ -414,7 +527,12 @@ async def run(central_adapter: str, peripheral_adapter: str, profile_name: str) 
         # is both overridden and (measured 2026-09-05) worse for latency on a
         # legacy-advertising link. See findings §11.1a / R-LATENCY-1.
         log.info("Relay live. Connect the Concept2 app to the advertised PM5.")
-        await asyncio.Event().wait()
+        while True:
+            await dropped.wait()
+            dropped.clear()
+            log.warning("PM5 link dropped; reconnecting (peripheral stays up)...")
+            client = await _reconnect_pm5(central_adapter, on_disconnect)
+            await relay.rebind_central(BleakCentralLink(client))
     finally:
         reporter.cancel()
         with contextlib.suppress(Exception):

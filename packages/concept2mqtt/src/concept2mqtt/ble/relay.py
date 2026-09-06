@@ -97,6 +97,7 @@ class RelayStats:
     reads_served: int = 0
     notify_errors: int = 0
     unavailable_characteristics: int = 0
+    reconnects: int = 0
     forward_seconds_total: float = 0.0
     forward_seconds_max: float = 0.0
 
@@ -168,14 +169,7 @@ class BleRelay:
         await self._peripheral.start(
             self._profile, on_read=self._on_read, on_write=self._on_write
         )
-        for uuid in self._streaming:
-            try:
-                await self._central.start_notify(uuid, self._on_notification)
-            except Exception:
-                self.stats.unavailable_characteristics += 1
-                log.warning("PM5 does not stream %s; skipping", uuid, exc_info=True)
-            else:
-                self._subscribed.append(uuid)
+        await self._subscribe_central()
         log.info(
             "BLE relay started: profile=%s services=%d streaming=%d/%d",
             self._profile.name,
@@ -183,6 +177,39 @@ class BleRelay:
             len(self._subscribed),
             len(self._streaming),
         )
+
+    async def rebind_central(self, central: CentralLink) -> None:
+        """Resume relaying over a freshly reconnected PM5 link.
+
+        The peripheral is deliberately untouched: the consumer keeps its
+        connection and its subscriptions across a PM5 dropout, and simply sees
+        a gap in the stream. Cached reads are kept too — they hold the erg's
+        identity, which does not change when the link does.
+        """
+        self._central = central
+        self.stats.reconnects += 1
+        await self._subscribe_central()
+        log.info(
+            "BLE relay rebound to the PM5: streaming=%d/%d",
+            len(self._subscribed),
+            len(self._streaming),
+        )
+
+    async def _subscribe_central(self) -> None:
+        """Subscribe to every streaming characteristic the firmware offers."""
+        self._subscribed.clear()
+        unavailable = 0
+        for uuid in self._streaming:
+            try:
+                await self._central.start_notify(uuid, self._on_notification)
+            except Exception:
+                unavailable += 1
+                log.warning("PM5 does not stream %s; skipping", uuid, exc_info=True)
+            else:
+                self._subscribed.append(uuid)
+        # Assigned, not accumulated: this describes the firmware in front of
+        # us, so a reconnect must not double-count the same missing stream.
+        self.stats.unavailable_characteristics = unavailable
 
     async def stop(self) -> None:
         """Stop advertising and unsubscribe from PM5 notifications."""

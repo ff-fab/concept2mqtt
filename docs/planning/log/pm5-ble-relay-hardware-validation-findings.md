@@ -596,3 +596,47 @@ over-length warning fires on `ce060034`. If `write_errors` climbs with
 `ce060034` and the PM5 stays at 1 Hz, hypothesis 1 is confirmed and the fix is
 a relay-side sample-rate translation — which R-LATENCY-1 currently forbids, so
 that requirement would need revisiting.
+
+### 14.3 Hardware verification of §14.1 (2026-09-06, edge-04 at `192.168.12.114`)
+
+`BluezPeripheralServer` exercised standalone on `hci1` — no PM5 involved, so
+this covers the peripheral-side claims only:
+
+| Check | Result |
+| --- | --- |
+| `Pairable` / `Discoverable` after startup | `False` / `False` — the non-bondable fix works, and needs no extra polkit privilege |
+| `ActiveInstances` while running | `1` |
+| `ActiveInstances` after `stop()` | **`0`** — the advertisement really is unregistered. Under the old code `Advertisement.release()` raised `AttributeError` into `contextlib.suppress`, so this stayed `1` for the life of the daemon |
+| 3 consecutive start/stop cycles | **PASS**, 0 failures, no warnings from `stop()` — the "Failed to register advertisement" restart failure is gone |
+
+Still unverified, because it needs the iPhone: that the app connects with no
+pairing prompt and reconnects after a relay restart without a both-sides wipe.
+That is the end-to-end claim and belongs to `c2m-ooz.3.3`.
+
+### 14.4 `c2m-ooz.3.5` — reconnect and resume advertising
+
+The relay had no disconnect handling at all: `run()` awaited
+`asyncio.Event().wait()` forever and the `BleakClient` was built without a
+`disconnected_callback`. That is why §8's PM5 drop at 21:53 left it dead for
+4 h.
+
+- **R-RELAY-2.** A `disconnected_callback` now wakes a supervisor loop that
+  rescans and reconnects with exponential backoff (2 s → 60 s, never gives
+  up), then calls `BleRelay.rebind_central()` to resubscribe on the new link.
+  The peripheral is deliberately untouched, so the consumer keeps its
+  connection and its CCCDs and just sees a gap in the stream. The read cache
+  is kept too — it holds erg identity, which does not change when the link
+  does. `reconnects` counts them.
+- `unavailable_characteristics` became a per-pass gauge rather than a running
+  total, or a reconnect would report a firmware gap that grows without bound.
+- **R-OPS-3.** A poll of the peripheral adapter's `Device1.Connected` logs
+  consumer connects and disconnects, and re-registers the advertisement on the
+  disconnect edge. Note that whether BlueZ already resumes advertising on its
+  own was **never actually established** — the §8 "disappeared from the app's
+  scan" was confounded by the phone silently reattaching a bond, which §14.1
+  removes. Re-registering makes it true either way; the new log settles the
+  question on the next run.
+
+Only the first connect still fails fast ("No PM5 found — wake it with the
+handle"): an erg asleep at startup is a setup mistake worth reporting, whereas
+a mid-session drop is worth riding out.

@@ -91,6 +91,19 @@ not be found by the next run's scan:
 bluetoothctl disconnect <PM5-address>
 ```
 
+### 2.2 What the relay now recovers from by itself
+
+- **PM5 link drops.** The relay rescans and reconnects with backoff (2 s →
+  60 s) and resubscribes, without touching the peripheral — the app should
+  keep its connection and see only a gap in the data. Watch for
+  `PM5 link dropped; reconnecting` and a rising `reconnects` counter.
+- **Consumer disconnects.** Logged as `Consumer disconnected: <addr>`, and the
+  advertisement is re-registered so the app can find the relay again
+  (`Resumed advertising after consumer disconnect`).
+
+Neither should need manual intervention. If Step D shows otherwise, record it
+against `c2m-ooz.3.5`.
+
 ---
 
 ## 3. Step B — Confirm which service the app queries

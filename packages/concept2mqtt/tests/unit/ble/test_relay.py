@@ -139,6 +139,82 @@ class TestLifecycle:
         assert started_relay.subscribed == ()
 
 
+class TestCentralReconnect:
+    """A PM5 dropout must not disturb the consumer's side of the relay.
+
+    The relay sat dead for 4 h after a PM5 drop on 2026-09-05 because nothing
+    reconnected it (R-RELAY-2). Rebinding resumes the stream over a new link
+    while the peripheral, and so the consumer's connection, stays up.
+
+    Technique: State Transition Testing — started -> dropped -> rebound.
+    """
+
+    async def test_rebind_resubscribes_on_the_new_link(
+        self, started_relay: BleRelay
+    ) -> None:
+        replacement = FakeCentralLink()
+
+        await started_relay.rebind_central(replacement)
+
+        expected = {c.uuid for c in get_profile() if c.streaming}
+        assert set(replacement.subscriptions) == expected
+        assert set(started_relay.subscribed) == expected
+
+    async def test_rebind_relays_from_the_new_link(
+        self, started_relay: BleRelay, peripheral: FakePeripheralServer
+    ) -> None:
+        replacement = FakeCentralLink()
+        await started_relay.rebind_central(replacement)
+
+        await replacement.emit(GENERAL_STATUS, b"\x09")
+
+        assert peripheral.notifications == [(GENERAL_STATUS, b"\x09")]
+
+    async def test_rebind_leaves_the_peripheral_untouched(
+        self, started_relay: BleRelay, peripheral: FakePeripheralServer
+    ) -> None:
+        """The consumer keeps its connection and its subscriptions."""
+        expected = {c.uuid for c in get_profile() if c.streaming}
+
+        await started_relay.rebind_central(FakeCentralLink())
+
+        assert peripheral.running is True
+        assert peripheral.subscribed == expected
+
+    async def test_rebind_counts_the_reconnect(self, started_relay: BleRelay) -> None:
+        await started_relay.rebind_central(FakeCentralLink())
+        await started_relay.rebind_central(FakeCentralLink())
+
+        assert started_relay.stats.reconnects == 2
+
+    async def test_rebind_does_not_double_count_a_missing_stream(
+        self, started_relay: BleRelay
+    ) -> None:
+        """unavailable_characteristics describes the firmware, not a total.
+
+        Technique: Error Guessing — a per-pass gauge accumulated across
+        reconnects would report a firmware gap that grows without bound.
+        """
+        await started_relay.rebind_central(
+            FakeCentralLink(unavailable={GENERAL_STATUS})
+        )
+        await started_relay.rebind_central(
+            FakeCentralLink(unavailable={GENERAL_STATUS})
+        )
+
+        assert started_relay.stats.unavailable_characteristics == 1
+
+    async def test_rebind_clears_a_gap_that_the_new_firmware_link_fills(
+        self, started_relay: BleRelay
+    ) -> None:
+        await started_relay.rebind_central(
+            FakeCentralLink(unavailable={GENERAL_STATUS})
+        )
+        await started_relay.rebind_central(FakeCentralLink())
+
+        assert started_relay.stats.unavailable_characteristics == 0
+
+
 class TestFirmwareVarianceTolerance:
     """A characteristic the firmware lacks costs only that one stream.
 

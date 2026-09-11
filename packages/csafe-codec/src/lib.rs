@@ -133,7 +133,7 @@ fn py_parse_extended_frame(frame: &[u8]) -> PyResult<(u8, u8, Vec<u8>)> {
 ///
 /// Raises ``ValueError`` on parse errors.
 #[pyfunction(name = "parse_frame")]
-fn py_parse_frame(py: Python<'_>, frame: &[u8]) -> PyResult<PyObject> {
+fn py_parse_frame(py: Python<'_>, frame: &[u8]) -> PyResult<Py<PyAny>> {
     let result = framing::parse_frame(frame)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     let dict = pyo3::types::PyDict::new(py);

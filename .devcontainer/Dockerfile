@@ -1,7 +1,7 @@
 # concept2mqtt development container
-# Python 3.13 + uv + common dev tools
+# Python 3.14 + uv + common dev tools
 
-FROM mcr.microsoft.com/devcontainers/python:3.13
+FROM mcr.microsoft.com/devcontainers/python:3.14
 
 # Install uv (fast Python package manager)
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv

@@ -21,7 +21,7 @@ macro_rules! py_enum_bindings {
         }
 
         #[pyfunction(name = $py_values)]
-        fn $values_fn(py: Python<'_>) -> PyResult<PyObject> {
+        fn $values_fn(py: Python<'_>) -> PyResult<Py<PyAny>> {
             let dict = PyDict::new(py);
             $( dict.set_item(stringify!($variant), $val as u8)?; )+
             Ok(dict.into_any().unbind())

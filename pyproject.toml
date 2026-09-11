@@ -16,6 +16,9 @@ dependencies = [
     "csafe-codec",
 ]
 
+[project.scripts]
+concept2mqtt = "concept2mqtt.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

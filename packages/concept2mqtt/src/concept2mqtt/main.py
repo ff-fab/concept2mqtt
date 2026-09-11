@@ -12,7 +12,7 @@ from concept2mqtt.app import create_app
 
 
 def main() -> None:
-    """Create and run the concept2mqtt application."""
+    """Start the CLI without registering an adapter that does not exist yet."""
     app = create_app(version=__version__)
     app.cli()
 

@@ -180,7 +180,7 @@ class TestIdentity:
 
 
 class TestEventStream:
-    """events() yields pre-configured events, then stops.
+    """events() yields pre-configured events and accepts live input.
 
     Technique: Specification-based Testing — event delivery contract.
     """
@@ -188,6 +188,7 @@ class TestEventStream:
     async def test_empty_events_stream(self, adapter: FakePm5Adapter) -> None:
         """No pre-configured events yields nothing."""
         await adapter.connect()
+        adapter.emit_done()
 
         events = [e async for e in adapter.events()]
 
@@ -199,6 +200,7 @@ class TestEventStream:
         """Pre-configured events are yielded in order."""
         adapter = FakePm5Adapter(events_to_emit=[status_event, stroke_event])
         await adapter.connect()
+        adapter.emit_done()
 
         events = [e async for e in adapter.events()]
 
@@ -211,16 +213,22 @@ class TestEventStream:
     ) -> None:
         """emit() adds an event to the stream from outside."""
         await adapter.connect()
-        # Drain the initial stream (empty)
-        _ = [e async for e in adapter.events()]
-
-        # Inject a new event and consume it
+        # Inject a live event before ending the stream.
         adapter.emit(status_event)
         adapter.emit_done()
 
         events = [e async for e in adapter.events()]
         assert len(events) == 1
         assert events[0] is status_event
+
+    async def test_disconnect_ends_live_stream(self, adapter: FakePm5Adapter) -> None:
+        """Disconnect wakes a consumer waiting for a later live event."""
+        await adapter.connect()
+        consumer = adapter.events().__anext__()
+        await adapter.disconnect()
+
+        with pytest.raises(StopAsyncIteration):
+            await consumer
 
     async def test_idle_status_event_factory(self) -> None:
         """Convenience factory returns an idle status event."""

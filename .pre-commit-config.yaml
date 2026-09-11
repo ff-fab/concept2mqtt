@@ -111,6 +111,6 @@ repos:
 
 # Configuration options
 default_language_version:
-  python: python3.13
+  python: python3.14
 
 fail_fast: false # Run all hooks, don't stop at first failure

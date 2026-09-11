@@ -344,7 +344,7 @@ py_ble_decoder! {
 /// Raises ``ValueError`` on empty data, unknown IDs, unsupported mux
 /// layouts, or decode errors.
 #[pyfunction(name = "decode_multiplexed")]
-pub fn py_decode_multiplexed(py: Python<'_>, data: &[u8]) -> PyResult<PyObject> {
+pub fn py_decode_multiplexed(py: Python<'_>, data: &[u8]) -> PyResult<Py<PyAny>> {
     let result = ble::decode_multiplexed(data)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 

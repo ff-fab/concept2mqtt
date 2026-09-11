@@ -5,7 +5,7 @@ Connect a concept2 rowing machine's PM5 to MQTT, e.g. for connection to a smart 
 [![CI](https://github.com/ff-fab/concept2mqtt/actions/workflows/ci.yml/badge.svg)](https://github.com/ff-fab/concept2mqtt/actions/workflows/ci.yml)
 [![Docs](https://github.com/ff-fab/concept2mqtt/actions/workflows/docs.yml/badge.svg)](https://ff-fab.github.io/concept2mqtt/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-%E2%89%A53.13.5-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.14-blue)](https://www.python.org/)
 
 **[Documentation](https://ff-fab.github.io/concept2mqtt/)** ·
 **[Quickstart](https://ff-fab.github.io/concept2mqtt/getting-started/quickstart/)** ·

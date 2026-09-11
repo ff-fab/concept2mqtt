@@ -6,7 +6,7 @@ boundary. They map 1:1 to MQTT publishing topics:
 - :class:`Pm5Identity`  -> ``pm5/identity/state``
 - :class:`Pm5Status`    -> ``pm5/state``
 - :class:`Pm5Stroke`    -> ``pm5/stroke/state``
-- :class:`Pm5Workout`   -> ``pm5/workout/state``
+- :class:`Pm5WorkoutSummary` -> ``pm5/workout/state``
 - :class:`Pm5ForceCurve` -> ``pm5/force_plot/state``
 
 Values are in human-readable SI units (seconds, metres, watts), not wire
@@ -16,6 +16,7 @@ types belongs in the adapter, not the domain.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -128,8 +129,12 @@ class Pm5Stroke:
 class Pm5ForceCurve:
     """Force curve data published as ``pm5/force_plot/state``."""
 
-    data_points: list[int]
+    data_points: Sequence[int]
     """Force values sampled during the drive phase."""
+
+    def __post_init__(self) -> None:
+        """Copy mutable caller input before exposing an immutable value object."""
+        object.__setattr__(self, "data_points", tuple(self.data_points))
 
 
 @dataclass(frozen=True, slots=True)

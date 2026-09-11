@@ -29,18 +29,26 @@ from cosalette import App, DeviceContext
 
 class Pm5Port(Protocol):
     """Domain-level interface to a PM5 rowing monitor."""
+    async def connect(self) -> None: ...
+    async def disconnect(self) -> None: ...
     async def identity(self) -> Pm5Identity: ...
-    async def subscribe(self) -> AsyncIterator[Pm5Event]: ...
-    async def send_command(self, cmd: Pm5Command) -> Pm5CommandResponse: ...
+    def events(self) -> AsyncIterator[Pm5Event]: ...
 
 app = App("concept2mqtt", adapters={Pm5Port: BleakPm5Adapter})
 
 @app.device("pm5")
 async def pm5_device(ctx: DeviceContext) -> AsyncIterator[None]:
     pm5 = ctx.adapter(Pm5Port)
-    ident = await pm5.identity()
-    ctx.publish_state({"serial": ident.serial_number})
-    yield  # keep running until shutdown
+    await pm5.connect()
+    try:
+        ident = await pm5.identity()
+        await ctx.publish_state({"serial": ident.serial_number})
+        yield  # complete framework startup before consuming events
+        async for event in pm5.events():
+            # publish event
+            yield
+    finally:
+        await pm5.disconnect()
 ```
 
 ## Decision Drivers
@@ -55,7 +63,7 @@ async def pm5_device(ctx: DeviceContext) -> AsyncIterator[None]:
 
 ### Option 1: cosalette + hexagonal Pm5Port Protocol (chosen)
 
-Use cosalette as the application framework. Define Pm5Port as a typing.Protocol specifying domain-level operations (identity, subscribe to events, send commands). Register adapters via cosalette's DI (App(adapters={Pm5Port: BleakPm5Adapter})). Device handlers use ctx.adapter(Pm5Port) to obtain the adapter. A FakePm5Adapter test double implements Pm5Port with canned responses for use with cosalette's AppHarness.
+Use cosalette as the application framework. Define Pm5Port as a typing.Protocol specifying domain-level operations (connect, disconnect, identity, and events). Register adapters via cosalette's DI (App(adapters={Pm5Port: BleakPm5Adapter})). Device handlers use ctx.adapter(Pm5Port) to obtain the adapter. A FakePm5Adapter test double implements Pm5Port with canned responses for use with cosalette's AppHarness.
 
 - *Advantages:* Clean domain boundary — device handlers never see BLE bytes, GATT UUIDs, or CSAFE wire format; Proven pattern — CentralLink and PeripheralServer Protocols in the BLE relay subsystem demonstrate the approach works well in this codebase; Full testing without hardware — FakePm5Adapter + AppHarness enables end-to-end device handler tests; cosalette handles MQTT connection, reconnection, LWT, health, structured logging, and CLI — zero custom infrastructure code; cosalette's DI resolves Pm5Port to the registered adapter automatically, reducing wiring boilerplate
 - *Disadvantages:* Adds a framework dependency (cosalette) that constrains application structure; Domain types (Pm5Identity, Pm5Status, etc.) must be defined as thin wrappers over csafe-codec types, adding a mapping layer; Requires Python >= 3.14, narrowing the deployment environment

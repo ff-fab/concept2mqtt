@@ -10,20 +10,28 @@ Usage::
     from concept2mqtt.app import create_app
     from concept2mqtt.pm5.fake import FakePm5Adapter
 
-    app = create_app(adapter_class=FakePm5Adapter)
+    app = create_app(adapter_class=lambda: FakePm5Adapter())
     app.run()
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING
 
 from cosalette import App, DeviceContext
 
-from concept2mqtt.mqtt.topics import APP_NAME, SUB_IDENTITY, SUB_STROKE
+from concept2mqtt.mqtt.topics import APP_NAME, TOPICS, TopicSpec
 from concept2mqtt.pm5.port import Pm5Port
-from concept2mqtt.pm5.types import Pm5StatusEvent, Pm5StrokeEvent
+from concept2mqtt.pm5.types import (
+    Pm5ForceCurveEvent,
+    Pm5SplitIntervalEvent,
+    Pm5StatusEvent,
+    Pm5StrokeEvent,
+    Pm5WorkoutSummaryEvent,
+)
 
 if TYPE_CHECKING:
     from concept2mqtt.pm5.types import Pm5Identity, Pm5Status, Pm5Stroke
@@ -65,7 +73,10 @@ def create_app(
         adapters=adapters,
     )
 
-    _register_pm5_device(app)
+    # A PM5 device cannot run without a concrete port implementation.  The
+    # production BLE adapter is intentionally not scaffolded as a fake.
+    if adapter_class is not None:
+        _register_pm5_device(app)
     return app
 
 
@@ -90,14 +101,15 @@ def _register_pm5_device(app: App) -> None:
             await _publish_identity(ctx, ident)
             await ctx.mark_available()
 
-            async for event in pm5.events():
-                match event:
-                    case Pm5StatusEvent(status=status):
-                        await ctx.publish_state(_status_payload(status))
-                    case Pm5StrokeEvent(stroke=stroke):
-                        async with ctx.sub_entity(SUB_STROKE) as sub:
-                            await sub.publish_state(_stroke_payload(stroke))
-            yield
+            # Yield once setup is complete so cosalette can finish startup.
+            # Every subsequent event is also a reactor boundary.  Keeping the
+            # sub-entities open for the connection lifetime avoids emitting an
+            # availability transition for every stroke.
+            async with _pm5_sub_entities(ctx):
+                yield
+                async for event in pm5.events():
+                    await _publish_event(ctx, event)
+                    yield
         finally:
             await ctx.mark_unavailable()
             await pm5.disconnect()
@@ -105,18 +117,91 @@ def _register_pm5_device(app: App) -> None:
 
 async def _publish_identity(ctx: DeviceContext, ident: Pm5Identity) -> None:
     """Publish PM5 identity as a retained sub-entity state."""
-    async with ctx.sub_entity(SUB_IDENTITY) as sub:
-        await sub.publish_state(
-            {
-                "serial_number": ident.serial_number,
-                "model": ident.model,
-                "hardware_revision": ident.hardware_revision,
-                "firmware_revision": ident.firmware_revision,
-                "manufacturer": ident.manufacturer,
-                "erg_type": ident.erg_type,
-            },
-            retain=True,
-        )
+    await _publish_topic(
+        ctx,
+        "identity",
+        {
+            "serial_number": ident.serial_number,
+            "model": ident.model,
+            "hardware_revision": ident.hardware_revision,
+            "firmware_revision": ident.firmware_revision,
+            "manufacturer": ident.manufacturer,
+            "erg_type": ident.erg_type,
+        },
+    )
+
+
+@asynccontextmanager
+async def _pm5_sub_entities(ctx: DeviceContext) -> AsyncIterator[None]:
+    """Keep PM5 sub-entities available for one connected device session."""
+    async with AsyncExitStack() as stack:
+        for key in ("identity", "workout", "stroke", "force_plot"):
+            await stack.enter_async_context(
+                ctx.sub_entity(_topic(key).sub_entity or "")
+            )
+        yield
+
+
+async def _publish_event(ctx: DeviceContext, event: object) -> None:
+    """Publish every event variant defined by :class:`Pm5Event`."""
+    match event:
+        case Pm5StatusEvent(status=status):
+            await _publish_topic(ctx, "state", _status_payload(status))
+        case Pm5StrokeEvent(stroke=stroke):
+            await _publish_topic(ctx, "stroke", _stroke_payload(stroke))
+        case Pm5ForceCurveEvent(force_curve=force_curve):
+            await _publish_topic(
+                ctx, "force_plot", {"data_points": force_curve.data_points}
+            )
+        case Pm5WorkoutSummaryEvent(summary=summary):
+            await _publish_topic(
+                ctx,
+                "workout",
+                {
+                    "event": "summary",
+                    "elapsed_time": summary.elapsed_time,
+                    "distance": summary.distance,
+                    "avg_pace": summary.avg_pace,
+                    "avg_stroke_rate": summary.avg_stroke_rate,
+                    "avg_heart_rate": summary.avg_heart_rate,
+                    "avg_drag_factor": summary.avg_drag_factor,
+                    "workout_type": summary.workout_type,
+                },
+            )
+        case Pm5SplitIntervalEvent(split=split):
+            await _publish_topic(
+                ctx,
+                "workout",
+                {
+                    "event": "split_interval",
+                    "number": split.number,
+                    "elapsed_time": split.elapsed_time,
+                    "distance": split.distance,
+                    "interval_type": split.interval_type,
+                },
+            )
+        case _:
+            msg = f"Unsupported PM5 event: {type(event).__name__}"
+            raise TypeError(msg)
+
+
+def _topic(key: str) -> TopicSpec:
+    """Return a declared PM5 topic, failing loudly on a programming error."""
+    return TOPICS[key]
+
+
+async def _publish_topic(
+    ctx: DeviceContext, key: str, payload: dict[str, object]
+) -> None:
+    """Publish according to the single, declared :data:`TOPICS` policy."""
+    spec = _topic(key)
+    channel = "state" if spec.sub_entity is None else f"{spec.sub_entity}/state"
+    await ctx.publish(
+        channel,
+        json.dumps(payload, separators=(",", ":")),
+        retain=spec.retained,
+        qos=spec.qos,
+    )
 
 
 def _status_payload(status: Pm5Status) -> dict[str, object]:

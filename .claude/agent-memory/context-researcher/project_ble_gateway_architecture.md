@@ -14,7 +14,7 @@ twice hardware-validated).
 2026-08-08, amended twice same day):** concept2mqtt holds the sole BLE connection to the
 PM5 (hardware-proven: PM5 firmware accepts only one simultaneous BLE central
 connection). Two complementary relay mechanisms serve other consumers: an MQTT relay
-(not yet built — see [[project_python_app_not_started]]) and a BLE peripheral relay
+(scaffolded — see [[project_python_app_not_started]]) and a BLE peripheral relay
 (concept2mqtt emulates the PM5 on a second adapter) for BLE-native consumers like the
 official Concept2 iPhone app.
 
@@ -92,5 +92,5 @@ passthrough; anything not yet exercised would likely pass through fine if the em
 characteristic set is complete enough.
 
 See also [[project_csafe_codec_architecture]] (separate, unrelated Rust codec track) and
-[[project_python_app_not_started]] (the actual concept2mqtt application, which the relay
-and codec both feed into but which has no code yet).
+[[project_python_app_not_started]] (the concept2mqtt application scaffold, which the
+relay and codec both feed into but which has no code yet).

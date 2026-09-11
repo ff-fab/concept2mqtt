@@ -12,7 +12,7 @@ Usage with cosalette::
 
     harness = AppHarness.create(name="test")
     # Register via cosalette's adapter DI
-    app = App("test", adapters={Pm5Port: FakePm5Adapter})
+    app = App("test", adapters={Pm5Port: lambda: FakePm5Adapter()})
 
 Or use directly in unit tests::
 
@@ -67,8 +67,9 @@ class FakePm5Adapter:
 
     Args:
         identity_data: Canned identity returned by :meth:`identity`.
-        events_to_emit: Events that :meth:`events` will yield, in order.
-            Defaults to a single idle status event.
+        events_to_emit: Events that :meth:`events` yields after connection,
+            in order. The stream remains open for :meth:`emit` calls until
+            :meth:`emit_done` or :meth:`disconnect` is called.
         connect_error: When set, :meth:`connect` raises it, simulating
             an unreachable PM5.
     """
@@ -92,12 +93,11 @@ class FakePm5Adapter:
         # Enqueue pre-configured events
         for event in self.events_to_emit:
             self._event_queue.put_nowait(event)
-        # Sentinel to end the stream
-        self._event_queue.put_nowait(None)
 
     async def disconnect(self) -> None:
         self.connected = False
         self.disconnect_count += 1
+        self.emit_done()
 
     async def identity(self) -> Pm5Identity:
         if not self.connected:
@@ -105,10 +105,9 @@ class FakePm5Adapter:
         return self.identity_data
 
     async def events(self) -> AsyncIterator[Pm5Event]:
-        """Yield pre-configured events, then stop.
+        """Yield events until :meth:`emit_done` or disconnect.
 
-        The stream ends when all events from ``events_to_emit`` have been
-        yielded. Call :meth:`emit` to inject additional events dynamically.
+        Call :meth:`emit` to inject additional events dynamically.
         """
         while True:
             event = await self._event_queue.get()

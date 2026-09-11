@@ -5,7 +5,7 @@ everything you need to get a development environment running and start making ch
 
 ## Prerequisites
 
-- Python ≥ 3.13.5
+- Python ≥ 3.14
 - Docker (for DevContainer development)
 - VS Code with DevContainers extension
 

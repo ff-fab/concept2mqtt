@@ -197,6 +197,7 @@ class TestPm5ForceCurve:
         fc = Pm5ForceCurve(data_points=[100, 200, 300, 250, 150])
         assert len(fc.data_points) == 5
         assert fc.data_points[2] == 300
+        assert isinstance(fc.data_points, tuple)
 
 
 class TestPm5WorkoutSummary:
@@ -256,9 +257,9 @@ class TestEventTypes:
         assert event.stroke is stroke
 
     def test_force_curve_event(self) -> None:
-        fc = Pm5ForceCurve(data_points=[1, 2, 3])
+        fc = Pm5ForceCurve(data_points=(1, 2, 3))
         event = Pm5ForceCurveEvent(force_curve=fc)
-        assert event.force_curve.data_points == [1, 2, 3]
+        assert event.force_curve.data_points == (1, 2, 3)
 
     def test_workout_summary_event(self) -> None:
         summary = Pm5WorkoutSummary(

@@ -1,74 +1,96 @@
 ---
 name: project_ble_gateway_architecture
 description:
-  Status of BLE gateway hardware validation (ADR-003) and the PM5 dual-connection PoC —
-  what's proven, what's next
+  Status of BLE gateway hardware validation (ADR-003) and the PM5 relay implementation
+  (c2m-ooz.3) — what's proven, what's built, what's left
 type: project
 ---
 
-Hardware validation for the BLE gateway architecture (epic `c2m-ooz`, P0) is 2/3
-complete as of 2026-08-08.
+**Updated 2026-09-11.** This supersedes the previous version of this memory, which was
+already stale (described `c2m-ooz.3` as "not started" — it is now software-complete and
+twice hardware-validated).
 
-**Proven facts (via `docs/planning/legacy/examples/test_dual_ble.py`, commit
-`680a723`):**
+**Decision (ADR-003, `docs/adr/ADR-003-ble-gateway-architecture.md`, Accepted
+2026-08-08, amended twice same day):** concept2mqtt holds the sole BLE connection to the
+PM5 (hardware-proven: PM5 firmware accepts only one simultaneous BLE central
+connection). Two complementary relay mechanisms serve other consumers: an MQTT relay
+(not yet built — see [[project_python_app_not_started]]) and a BLE peripheral relay
+(concept2mqtt emulates the PM5 on a second adapter) for BLE-native consumers like the
+official Concept2 iPhone app.
 
-- PM5 firmware accepts only ONE simultaneous BLE central connection. Confirmed via 4
-  independent test runs against a real PM5 (serial 530426599) on a Pi, with the iPhone
-  Concept2 app connected.
-- Follow-up same-day testing found the Pi's onboard BLE adapter fails to register a
-  peripheral GATT advertisement on kernel 6.18.x (upstream regression
-  raspberrypi/linux#7473, `Invalid Parameters 0x0d` from BlueZ's
-  `LEAdvertisingManager1`). Fixed via `rpi-update` to `6.18.42-v8+`.
-- After the kernel fix, dual-role operation (hci0 = central to real PM5, hci1 = USB
-  CSR8510 dongle running a real GATT peripheral) was confirmed working — an iPhone
-  connected to the emulated peripheral via LightBlue while the PM5 connection on hci0
-  stayed live.
+**Epic `c2m-ooz` (Hardware Validation PoC, P0) status:** `.1` (dual-connection test) and
+`.2` (ADR-002... ADR-003) closed. `.3` (the relay implementation) is **in_progress**,
+software-complete, hardware-validated twice, with only one child issue left open:
+**`c2m-ooz.3.3`** — a hardware re-run of Step C (feature neutrality) + Step D (20-min
+stability) + logbook check. This is the single next concrete task on the BLE track and
+blocks closing the whole P0 epic. Do it on real hardware (Pi `edge-04`, real PM5, iPhone
+with official Concept2 app) — cannot be done in a dev container.
 
-**Decision (ADR-003, `docs/adr/ADR-003-ble-gateway-architecture.md`, Accepted + amended
-twice same day):** concept2mqtt is the sole BLE connection to the PM5. Two complementary
-(not competing) relay mechanisms serve other consumers: an MQTT relay for MQTT-speaking
-consumers, and a BLE peripheral relay (concept2mqtt emulating the PM5 on a second
-adapter) for BLE-native consumers like the official Concept2 iPhone app that can't speak
-MQTT at all.
+**What's implemented (`packages/concept2mqtt/src/concept2mqtt/ble/`):**
 
-**Issue state:**
+- `profile.py` (386 LOC) — declarative `GattProfile` model, 5 Concept2 proprietary
+  services / 27 characteristics, cross-checked at test time against
+  `docs/planning/spec/csafe/ble_services.yaml`. An unverified placeholder FTMS profile
+  sits behind `get_profile(name)` as a swap point (turned out unneeded — see below).
+- `relay.py` (361 LOC) — `BleRelay`: transport-free core wiring a `CentralLink` Protocol
+  (real PM5) to a `PeripheralServer` Protocol (emulated PM5), moves opaque bytes, no
+  CSAFE decoding (that's a separate concern via the `tap` hook for future MQTT
+  publishing). Includes `RelayStats` (notifications_relayed/withheld, write_errors,
+  forward_ms_mean, reconnects, etc.) instrumented specifically to diagnose the two
+  hardware defects below.
+- `errors.py` — `BleRelayError` hierarchy.
+- Hardware binding lives at `docs/planning/legacy/examples/relay_pm5.py` (bleak central
+  on hci0 + bluez-peripheral peripheral on hci1) — deliberately kept as a PoC script,
+  not promoted to `src/` yet.
+- 197 unit tests (`packages/concept2mqtt/tests/unit/ble/`, `test_relay.py` alone is 831
+  lines) using in-memory `FakeCentralLink`/`FakePeripheralServer` doubles, not mocks.
 
-- `c2m-ooz.1` (run the dual-connection test) — CLOSED, produced the finding above.
-- `c2m-ooz.2` (write the ADR) — CLOSED, produced ADR-003.
-- `c2m-ooz.3` (implement the actual relay: Pi central + peripheral emulation on 2
-  adapters, byte-level passthrough, `bluez-peripheral` lib, D-Bus GattManager1/
-  LEAdvertisingManager1 path not raw btmgmt) — OPEN, P2, not started. This is the last
-  child of the `c2m-ooz` epic and the next concrete BLE-track work item.
+**Confirmed via 2026-09-05/06 hardware runs (real PM5 serial 530426599, iPhone official
+app, Pi `edge-04`):**
 
-**Why this matters:** `docs/planning/legacy/examples/test_dual_ble.py` is a hardened
-diagnostic/PoC script (502 lines, has a full phase-based test harness with
-scan/bonded-fallback/connect/GATT-read/notification-subscribe/manual-iPhone-check
-phases), not application code — it lives under `docs/planning/legacy/examples/`, not
-`src/`. It fully served its diagnostic purpose (closed c2m-ooz.1) and should not be
-mistaken for a component that still needs finishing; the actual relay implementation is
-a separate, not-yet-started task (c2m-ooz.3).
+- App uses ONLY the proprietary `ce06xxxx` services (identity reads `ce060011-18`, CSAFE
+  writes to `ce060021`, sample-rate writes to `ce060034`). Zero FTMS/`0x1826` traffic —
+  the FTMS profile placeholder is confirmed unneeded.
+- Discovery requires the 128-bit `ce060000` service UUID in the ADV data; `0x1826` alone
+  is not seen by the app. Legacy-advertising-only adapters (CSR8510-class dongle) can't
+  fit the PM5's full BLE-5 extended-advertising packet (58 B) into 31 B legacy format,
+  so the advertised name truncates to "PM5" (documented as a known cosmetic gap).
+- Step C (feature neutrality) demonstrated once: live metrics, start/pause/resume/stop,
+  splits, end-of-workout summary all relayed correctly, zero notification drops across
+  4944 relayed notifications in one session.
+- Two defects found and **root-caused and fixed** (2026-09-06, not yet hardware
+  re-verified — that's exactly what `c2m-ooz.3.3` covers):
+  1. **~1s added latency** (`c2m-ooz.3.1`, closed) — root cause: the app writes an
+     8-byte sample-rate value to `ce060034`, a characteristic the spec declares as 1
+     byte; the emulated peripheral didn't enforce the length limit, so the PM5 rejected
+     the write (ATT `0x0D`) and stayed at its 1 Hz default. Fix: relay now truncates
+     over-length consumer writes to the characteristic's declared length before
+     forwarding (reproducing the real PM5's own ATT-layer contract). The relay's own
+     forward path measured 1.2 ms mean / 4.2 ms max — never the real bottleneck.
+  2. **Connection unstable across relay restarts** (`c2m-ooz.3.2`, closed) — three bugs
+     in the peripheral binding: a pairing agent left the adapter bondable (iOS cached a
+     stale GATT layout after rebinding), `stop()` called a nonexistent
+     `Advertisement.release()` method silently swallowed by `contextlib.suppress`, and
+     an async `unregister()` call was never awaited. Fixed: non-bondable/non-pairable
+     adapter, proper advertisement + GATT app unregistration on shutdown.
+  3. Also found/fixed in the same session: SIGINT/SIGTERM were silently ignored under
+     `setsid` (no controlling terminal → no `KeyboardInterrupt`), so every prior "clean"
+     stop actually left the PM5 connected — now explicit `asyncio` signal handlers.
+  4. Auto-reconnect (`c2m-ooz.3.5`, closed) — relay previously never recovered from a
+     PM5-side drop (observed stuck for 4h). Fixed with a `disconnected_callback` +
+     exponential-backoff reconnect supervisor + `BleRelay.rebind_central()`.
 
-**How to apply:** When asked "what's next" on the BLE track, the answer is `c2m-ooz.3` —
-it has a fairly detailed DESIGN section already in beads (hypothesis: emulate the
-proprietary `ce06xxxx` CSAFE service, not the standard Fitness Machine Service `0x1826`;
-unconfirmed without a BLE traffic capture of the real app). Note this depends on the
-same hexagonal `Pm5Port` scaffolding work (`c2m-x3b` epic) also being built in parallel
-— check both epics before recommending where to start next.
+**Full findings log:** `docs/planning/log/pm5-ble-relay-hardware-validation-findings.md`
+(through §14.5) — extremely detailed, includes exact BLE traffic tables, requirement
+seeds (R-DISC-_, R-PAIR-_, R-LATENCY-_, R-RELAY-_, R-OPS-*), and the reasoning for each
+fix. Read this file directly for hardware-debugging-style questions about the relay.
 
-**Scope caveat (checked 2026-08-27):** c2m-ooz.3's 5 acceptance criteria cover
-connect/identity emulation, live-data relay latency, command relay, unaffected MQTT
-publishing, and hci0 connection stability for an extended session — they do NOT state or
-require full "feature parity/neutrality" with a direct iPhone-to-PM5 connection (no
-criterion enumerates testing every app feature, e.g. log downloads, workout programming,
-force plots — those live in separate not-yet-built epics `c2m-hlj`/`c2m-2rf`). The relay
-is byte-level passthrough (no CSAFE decoding needed for the relay itself), so untested
-features would likely pass through fine IF the emulated GATT service/characteristic set
-is complete enough — but that completeness is exactly what's unverified. The
-proprietary-vs-standard CSAFE service hypothesis (`ce06xxxx` vs `0x1826`) remains
-explicitly unconfirmed without a real BLE traffic capture (e.g. Xcode PacketLogger) — if
-wrong, the app may not even recognize the relay as a PM5. As of this check there is no
-separate/later beads issue for "iPhone app validation" or "feature parity testing"
-anywhere in `bd list` (35 issues total) — c2m-ooz.3 is the terminal child of the
-`c2m-ooz` epic; closing it closes the epic. The nearest adjacent item, `c2m-j2s.4`
-("End-to-end MVP validation on real Pi hardware", epic `c2m-j2s` MVP Integration),
-validates concept2mqtt's own telemetry pipeline, not iPhone-app-via-relay parity.
+**Acceptance criteria for `c2m-ooz.3`** explicitly do NOT require full feature parity
+across every iPhone-app screen (log downloads, workout programming, force plots) — those
+live in separate not-yet-built epics `c2m-hlj`/`c2m-2rf`. The relay is byte-level
+passthrough; anything not yet exercised would likely pass through fine if the emulated
+characteristic set is complete enough.
+
+See also [[project_csafe_codec_architecture]] (separate, unrelated Rust codec track) and
+[[project_python_app_not_started]] (the actual concept2mqtt application, which the relay
+and codec both feed into but which has no code yet).

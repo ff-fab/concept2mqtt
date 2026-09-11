@@ -2,7 +2,7 @@
 name = "csafe-codec"
 version = "0.1.0"
 description = "CSAFE protocol codec for Concept2 PM5 rowing monitors"
-requires-python = ">=3.13.5"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 
 [build-system]

@@ -42,10 +42,13 @@ from concept2mqtt.pm5.errors import Pm5ConnectionError, Pm5TimeoutError
 from concept2mqtt.pm5.port import Pm5Port
 from concept2mqtt.pm5.types import (
     Pm5Event,
+    Pm5ForceCurve,
     Pm5ForceCurveEvent,
     Pm5Identity,
     Pm5SplitIntervalEvent,
+    Pm5Status,
     Pm5StatusEvent,
+    Pm5Stroke,
     Pm5StrokeEvent,
     Pm5WorkoutSummaryEvent,
     RowingState,
@@ -461,6 +464,24 @@ class TestIdentityReading:
         assert ident.model == "PM5"
         assert ident.erg_type == "SkiErg"
 
+    async def test_identity_mismatch_rejects_connection(
+        self, mock_scanner: AsyncMock, mock_client: AsyncMock
+    ) -> None:
+        """Configured serial mismatch fails before exposing the PM5 connection.
+
+        Technique: Equivalence Partitioning -- matching and non-matching identities.
+        """
+        adapter = BleakPm5Adapter(expected_serial_number="different")
+
+        with (
+            patch("concept2mqtt.pm5.adapter.BleakClient", return_value=mock_client),
+            pytest.raises(Pm5ConnectionError, match="serial mismatch"),
+        ):
+            await adapter.connect()
+
+        assert adapter._connected is False
+        mock_client.disconnect.assert_awaited_once()
+
 
 # =============================================================================
 # Wire-to-domain mapping functions
@@ -818,7 +839,7 @@ class TestEventStreaming:
         sender = FakeCharacteristic("ce060031-43e5-11e4-916c-0800200c9a66")
         adapter._on_notification(sender, bytearray(payload))
 
-        event = adapter._event_queue.get_nowait()
+        event = await _next_event(adapter)
         assert isinstance(event, Pm5StatusEvent)
         assert event.status.elapsed_time == pytest.approx(100.0)
         assert event.status.distance == pytest.approx(500.0)
@@ -864,30 +885,50 @@ class TestEventStreaming:
         assert isinstance(event, Pm5ForceCurveEvent)
         assert event.force_curve.data_points == (10, 20, 30, 40)
 
-    async def test_event_queue_coalesces_to_latest_notification(
+    async def test_status_boundaries_survive_telemetry_coalescing(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
         mock_client: AsyncMock,
     ) -> None:
-        """High-rate notifications retain only the newest pending event.
+        """High-rate telemetry cannot overwrite distinct status boundaries.
 
-        Technique: Boundary Value Analysis -- queue capacity of one.
+        Technique: State Transition Testing -- ACTIVE -> PAUSED survives a burst.
         """
         await _connect_adapter(adapter, mock_scanner, mock_client)
-        sender = FakeCharacteristic("ce060031-43e5-11e4-916c-0800200c9a66")
-        first = bytearray(19)
-        second = bytearray(19)
-        first[0:3] = (100).to_bytes(3, "little")
-        second[0:3] = (200).to_bytes(3, "little")
+        active = Pm5StatusEvent(
+            Pm5Status(0, 0, 0, 0, 0, 0, 0, 0, 0, WorkoutState.ACTIVE, RowingState.DRIVE)
+        )
+        paused = Pm5StatusEvent(
+            Pm5Status(
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                WorkoutState.PAUSED,
+                RowingState.INACTIVE,
+            )
+        )
+        adapter._enqueue_event(active)
+        adapter._enqueue_event(Pm5StrokeEvent(Pm5Stroke(1, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+        adapter._enqueue_event(paused)
+        adapter._enqueue_event(Pm5ForceCurveEvent(Pm5ForceCurve((1, 2))))
 
-        adapter._on_notification(sender, first)
-        adapter._on_notification(sender, second)
+        stream = adapter.events()
+        events = [await anext(stream) for _ in range(3)]
+        await stream.aclose()
 
-        assert adapter._event_queue.qsize() == 1
-        event = adapter._event_queue.get_nowait()
-        assert isinstance(event, Pm5StatusEvent)
-        assert event.status.elapsed_time == pytest.approx(2.0)
+        assert [
+            event.status.workout_state
+            for event in events
+            if isinstance(event, Pm5StatusEvent)
+        ] == [WorkoutState.ACTIVE, WorkoutState.PAUSED]
+        assert isinstance(events[-1], Pm5ForceCurveEvent)
 
     async def test_events_continue_after_automatic_reconnect(
         self, mock_scanner: AsyncMock

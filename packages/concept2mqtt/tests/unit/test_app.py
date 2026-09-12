@@ -4,6 +4,7 @@ Test Techniques Used:
 - Specification-based Testing: create_app factory, adapter registration,
   payload conversion
 - Equivalence Partitioning: with/without adapter class
+- State Transition Testing: PM5 workout lifecycle MQTT events
 """
 
 from __future__ import annotations
@@ -273,5 +274,93 @@ class TestPm5DeviceHandler:
         _payload, retained, qos = harness.messages_for(topic)[-1]
         assert not retained
         assert qos == expected_qos
+        with suppress(StopAsyncIteration):
+            await handler.aclose()
+
+    async def test_publishes_full_workout_lifecycle(self) -> None:
+        """ACTIVE -> PAUSED -> ACTIVE -> FINISHED publishes every boundary.
+
+        Technique: State Transition Testing -- complete workout lifecycle.
+        """
+        adapter = FakePm5Adapter()
+        app = create_app(adapter_class=lambda: adapter)
+        harness = AppHarness.create(name=APP_NAME)
+        ctx = DeviceContext(
+            name="pm5",
+            settings=harness.settings,
+            mqtt=harness.mqtt,
+            topic_prefix=APP_NAME,
+            shutdown_event=harness.shutdown_event,
+            adapters={Pm5Port: adapter},
+            clock=harness.clock,
+        )
+        handler = cast(AsyncGenerator[None], app._devices[0].func(ctx))
+        await anext(handler)
+
+        for state in (
+            WorkoutState.ACTIVE,
+            WorkoutState.PAUSED,
+            WorkoutState.ACTIVE,
+            WorkoutState.FINISHED,
+        ):
+            adapter.emit(
+                Pm5StatusEvent(
+                    Pm5Status(0, 0, 0, 0, 0, 0, 0, 0, 0, state, RowingState.INACTIVE)
+                )
+            )
+            await anext(handler)
+
+        workout_msgs = harness.messages_for("concept2mqtt/pm5/workout/state")
+        assert [message[0] for message in workout_msgs] == [
+            '{"event":"started"}',
+            '{"event":"paused"}',
+            '{"event":"resumed"}',
+            '{"event":"ended"}',
+        ]
+        assert [message[1] for message in workout_msgs] == [False, False, False, False]
+        assert [message[2] for message in workout_msgs] == [1, 1, 1, 1]
+
+        with suppress(StopAsyncIteration):
+            await handler.aclose()
+
+    async def test_no_lifecycle_event_for_same_workout_state(self) -> None:
+        """Repeated same-state status events produce no lifecycle event."""
+        adapter = FakePm5Adapter()
+        app = create_app(adapter_class=lambda: adapter)
+        harness = AppHarness.create(name=APP_NAME)
+        ctx = DeviceContext(
+            name="pm5",
+            settings=harness.settings,
+            mqtt=harness.mqtt,
+            topic_prefix=APP_NAME,
+            shutdown_event=harness.shutdown_event,
+            adapters={Pm5Port: adapter},
+            clock=harness.clock,
+        )
+        handler = cast(AsyncGenerator[None], app._devices[0].func(ctx))
+        await anext(handler)
+
+        # Two IDLE status events -- no lifecycle transition expected
+        idle_status = Pm5Status(
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            WorkoutState.IDLE,
+            RowingState.INACTIVE,
+        )
+        adapter.emit(Pm5StatusEvent(idle_status))
+        await anext(handler)
+        adapter.emit(Pm5StatusEvent(idle_status))
+        await anext(handler)
+
+        workout_msgs = harness.messages_for("concept2mqtt/pm5/workout/state")
+        assert len(workout_msgs) == 0
+
         with suppress(StopAsyncIteration):
             await handler.aclose()

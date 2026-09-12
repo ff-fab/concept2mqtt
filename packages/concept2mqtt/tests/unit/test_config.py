@@ -4,6 +4,7 @@ Test Techniques Used:
 - Specification-based Testing: default values match documented defaults
 - Boundary Value Analysis: port field constraints (ge=1, le=65535)
 - Equivalence Partitioning: valid and invalid log_level variants
+- Decision Table Testing: PM5 production binding configuration combinations
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.port == 1883
 
+    def test_pm5_binding_defaults_to_unconfigured(self) -> None:
+        settings = Settings()
+        assert settings.pm5_address is None
+        assert settings.pm5_serial_number is None
+
 
 class TestSettingsEnvOverride:
     """Settings reads values from environment variables."""
@@ -42,6 +48,38 @@ class TestSettingsEnvOverride:
         monkeypatch.setenv("PORT", "9999")
         settings = Settings()
         assert settings.port == 9999
+
+    def test_pm5_binding_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PM5_ADDRESS", "AA:BB:CC:DD:EE:FF")
+        monkeypatch.setenv("PM5_SERIAL_NUMBER", "530426599")
+
+        settings = Settings()
+
+        assert settings.pm5_adapter_kwargs() == {
+            "address": "AA:BB:CC:DD:EE:FF",
+            "expected_serial_number": "530426599",
+        }
+
+
+class TestPm5ProductionBinding:
+    """PM5 production startup requires an address and/or serial number.
+
+    Technique: Decision Table Testing -- all configured identity combinations.
+    """
+
+    def test_address_alone_is_valid(self) -> None:
+        assert Settings(pm5_address="AA:BB:CC:DD:EE:FF").pm5_adapter_kwargs() == {
+            "address": "AA:BB:CC:DD:EE:FF"
+        }
+
+    def test_serial_number_alone_is_valid(self) -> None:
+        assert Settings(pm5_serial_number="530426599").pm5_adapter_kwargs() == {
+            "expected_serial_number": "530426599"
+        }
+
+    def test_missing_identity_raises(self) -> None:
+        with pytest.raises(ValueError, match="PM5_ADDRESS"):
+            Settings().pm5_adapter_kwargs()
 
 
 class TestPortBoundaryValues:

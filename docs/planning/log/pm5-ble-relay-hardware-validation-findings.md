@@ -632,7 +632,7 @@ over-length warning fires on `ce060034`. If `write_errors` climbs with
 a relay-side sample-rate translation — which R-LATENCY-1 currently forbids, so
 that requirement would need revisiting.
 
-### 14.3 Hardware verification of §14.1 (2026-09-06, edge-04 at `<PI-IP-REDACTED>`)
+### 14.3 Hardware verification of §14.1 (2026-09-06, edge-04 at `<PI-SSH-REDACTED>`)
 
 `BluezPeripheralServer` exercised standalone on `hci1` — no PM5 involved, so
 this covers the peripheral-side claims only:
@@ -678,7 +678,7 @@ a mid-session drop is worth riding out.
 
 ### 14.5 Second 2026-09-06 hardware run — latency root cause + SIGINT defect
 
-Hardware session on edge-04 (`<PI-IP-REDACTED>`) exercising the §14.1/§14.4
+Hardware session on edge-04 (`<PI-SSH-REDACTED>`) exercising the §14.1/§14.4
 fixes against the real PM5 and the Concept2 app.
 
 **Write payload logging** (`ace886b`, prerequisite for the below): an

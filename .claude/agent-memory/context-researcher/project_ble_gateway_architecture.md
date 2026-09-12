@@ -80,9 +80,14 @@ app, Pi `edge-04`):**
      PM5-side drop (observed stuck for 4h). Fixed with a `disconnected_callback` +
      exponential-backoff reconnect supervisor + `BleRelay.rebind_central()`.
 
+A restart helper script was left at `/tmp/relay_restart*.sh` on the Pi itself (not in
+the repo) — also unconfirmed to still exist. There is no ansible/deploy tooling or setup
+doc for `edge-04` in this repo; the findings log is the only source of Pi-side
+operational lessons (see its §8).
+
 **Full findings log:** `docs/planning/log/pm5-ble-relay-hardware-validation-findings.md`
 (through §14.5) — extremely detailed, includes exact BLE traffic tables, requirement
-seeds (R-DISC-_, R-PAIR-_, R-LATENCY-_, R-RELAY-_, R-OPS-*), and the reasoning for each
+seeds (R-DISC-_, R-PAIR-_, R-LATENCY-_, R-RELAY-_, R-OPS-\*), and the reasoning for each
 fix. Read this file directly for hardware-debugging-style questions about the relay.
 
 **Acceptance criteria for `c2m-ooz.3`** explicitly do NOT require full feature parity

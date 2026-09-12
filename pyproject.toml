@@ -10,6 +10,7 @@ authors = [
 ]
 
 dependencies = [
+    "bleak>=0.22.0",
     "cosalette>=0.9.6",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",

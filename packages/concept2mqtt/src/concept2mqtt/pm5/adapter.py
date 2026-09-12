@@ -24,7 +24,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections import deque
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -69,7 +70,9 @@ CSAFE_INTER_FRAME_GAP: float = 0.05
 MAX_CSAFE_WRITE_SIZE: int = 20
 """Maximum PM5 BLE write size for the CSAFE receive characteristic."""
 EVENT_QUEUE_SIZE: int = 1
-"""One latest-value event, preventing unbounded notification backlog."""
+"""One latest telemetry event, preventing unbounded notification backlog."""
+STATUS_QUEUE_SIZE: int = 8
+"""Bounded sequence of distinct PM5 status states for lifecycle delivery."""
 
 # GATT characteristic UUID suffixes (expanded via pm5_uuid)
 _CHAR_MODEL: str = pm5_uuid(0x0011)
@@ -251,6 +254,7 @@ class BleakPm5Adapter:
         reconnect_max: Maximum reconnection backoff in seconds.
         adapter: BLE adapter name (e.g. ``"hci0"``), or ``None`` for default.
         address: Connect to a specific BLE address instead of scanning.
+        expected_serial_number: Require this serial number after connecting.
     """
 
     scan_timeout: float = DEFAULT_SCAN_TIMEOUT
@@ -258,6 +262,7 @@ class BleakPm5Adapter:
     reconnect_max: float = DEFAULT_RECONNECT_MAX
     adapter: str | None = None
     address: str | None = None
+    expected_serial_number: str | None = None
 
     _client: BleakClient | None = field(default=None, init=False, repr=False)
     _identity: Pm5Identity | None = field(default=None, init=False, repr=False)
@@ -265,6 +270,12 @@ class BleakPm5Adapter:
         default_factory=lambda: asyncio.Queue(maxsize=EVENT_QUEUE_SIZE),
         init=False,
         repr=False,
+    )
+    _status_events: deque[Pm5StatusEvent] = field(
+        default_factory=deque, init=False, repr=False
+    )
+    _events_available: asyncio.Event = field(
+        default_factory=asyncio.Event, init=False, repr=False
     )
     _connected: bool = field(default=False, init=False, repr=False)
     _running: bool = field(default=False, init=False, repr=False)
@@ -353,14 +364,23 @@ class BleakPm5Adapter:
             raise Pm5ConnectionError("not connected")
         return self._identity
 
-    async def events(self) -> AsyncIterator[Pm5Event]:
+    async def events(self) -> AsyncGenerator[Pm5Event]:
         """Yield domain events decoded from PM5 BLE notifications.
 
         The iterator ends when :meth:`disconnect` is called. Transient BLE
         disconnects reconnect in the background without ending the stream.
         """
         while True:
-            event = await self._event_queue.get()
+            await self._events_available.wait()
+            if self._status_events:
+                event = self._status_events.popleft()
+            elif not self._event_queue.empty():
+                event = self._event_queue.get_nowait()
+            else:
+                self._events_available.clear()
+                continue
+            if not self._status_events and self._event_queue.empty():
+                self._events_available.clear()
             if event is None:
                 return
             yield event
@@ -522,7 +542,18 @@ class BleakPm5Adapter:
         await self._connect_device(device)
         client = self._client
         try:
-            self._identity = await self._read_identity()
+            identity = await self._read_identity()
+            if (
+                self.expected_serial_number is not None
+                and identity.serial_number != self.expected_serial_number
+            ):
+                msg = (
+                    "PM5 serial mismatch: "
+                    f"expected {self.expected_serial_number}, "
+                    f"got {identity.serial_number}"
+                )
+                raise Pm5ConnectionError(msg)
+            self._identity = identity
             await self._subscribe_notifications()
             if client is not self._client or not client or not client.is_connected:
                 raise Pm5ConnectionError("BLE disconnected during connection setup")
@@ -646,12 +677,41 @@ class BleakPm5Adapter:
         """Remove stale values and explicit-stop sentinels before connecting."""
         while not self._event_queue.empty():
             self._event_queue.get_nowait()
+        self._status_events.clear()
+        self._events_available.clear()
 
     def _enqueue_event(self, event: Pm5Event | None) -> None:
-        """Keep only the latest event when notifications outpace consumers."""
-        if self._event_queue.full():
-            self._event_queue.get_nowait()
-        self._event_queue.put_nowait(event)
+        """Coalesce telemetry while preserving a bounded status transition sequence."""
+        if event is None:
+            self._clear_event_queue()
+            self._event_queue.put_nowait(None)
+            self._events_available.set()
+            return
+
+        if isinstance(event, Pm5StatusEvent):
+            self._enqueue_status_event(event)
+        else:
+            if self._event_queue.full():
+                self._event_queue.get_nowait()
+            self._event_queue.put_nowait(event)
+        self._events_available.set()
+
+    def _enqueue_status_event(self, event: Pm5StatusEvent) -> None:
+        """Store status state changes without letting telemetry overwrite them."""
+        if (
+            self._status_events
+            and self._status_events[-1].status.workout_state
+            == event.status.workout_state
+        ):
+            self._status_events[-1] = event
+            return
+        if len(self._status_events) == STATUS_QUEUE_SIZE:
+            dropped = self._status_events.popleft()
+            log.warning(
+                "PM5 status queue full; dropping oldest state %s",
+                dropped.status.workout_state,
+            )
+        self._status_events.append(event)
 
     async def _subscribe_notifications(self) -> None:
         """Subscribe to all streaming characteristics on the PM5."""

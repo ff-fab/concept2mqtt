@@ -152,6 +152,29 @@ class TestWorkoutLifecycleNoOpTransitions:
         result = lifecycle.update(WorkoutState.UNKNOWN)
         assert result is None
 
+    def test_unknown_does_not_hide_idle_to_active_transition(
+        self, lifecycle: WorkoutLifecycle
+    ) -> None:
+        """IDLE -> UNKNOWN -> ACTIVE still starts the workout.
+
+        Technique: State Transition Testing -- UNKNOWN is non-authoritative.
+        """
+        lifecycle.update(WorkoutState.UNKNOWN)
+
+        assert lifecycle.update(WorkoutState.ACTIVE) == WorkoutTransition.STARTED
+
+    def test_unknown_does_not_hide_active_to_finished_transition(
+        self, lifecycle: WorkoutLifecycle
+    ) -> None:
+        """ACTIVE -> UNKNOWN -> FINISHED still ends the workout.
+
+        Technique: State Transition Testing -- UNKNOWN is non-authoritative.
+        """
+        lifecycle.update(WorkoutState.ACTIVE)
+        lifecycle.update(WorkoutState.UNKNOWN)
+
+        assert lifecycle.update(WorkoutState.FINISHED) == WorkoutTransition.ENDED
+
     def test_unknown_to_idle_returns_none(self, lifecycle: WorkoutLifecycle) -> None:
         lifecycle.update(WorkoutState.UNKNOWN)
         result = lifecycle.update(WorkoutState.IDLE)

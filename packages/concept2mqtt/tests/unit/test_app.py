@@ -4,6 +4,7 @@ Test Techniques Used:
 - Specification-based Testing: create_app factory, adapter registration,
   payload conversion
 - Equivalence Partitioning: with/without adapter class
+- State Transition Testing: PM5 workout lifecycle MQTT events
 """
 
 from __future__ import annotations
@@ -276,8 +277,11 @@ class TestPm5DeviceHandler:
         with suppress(StopAsyncIteration):
             await handler.aclose()
 
-    async def test_publishes_lifecycle_transition_on_workout_start(self) -> None:
-        """Status event with ACTIVE workout state publishes a lifecycle event."""
+    async def test_publishes_full_workout_lifecycle(self) -> None:
+        """ACTIVE -> PAUSED -> ACTIVE -> FINISHED publishes every boundary.
+
+        Technique: State Transition Testing -- complete workout lifecycle.
+        """
         adapter = FakePm5Adapter()
         app = create_app(adapter_class=lambda: adapter)
         harness = AppHarness.create(name=APP_NAME)
@@ -293,29 +297,28 @@ class TestPm5DeviceHandler:
         handler = cast(AsyncGenerator[None], app._devices[0].func(ctx))
         await anext(handler)
 
-        # Emit a status event with ACTIVE workout state (transition from IDLE)
-        active_status = Pm5Status(
-            10.0,
-            50.0,
-            120.0,
-            2.0,
-            28,
-            0,
-            5,
-            180,
-            120,
+        for state in (
             WorkoutState.ACTIVE,
-            RowingState.DRIVE,
-        )
-        adapter.emit(Pm5StatusEvent(active_status))
-        await anext(handler)
+            WorkoutState.PAUSED,
+            WorkoutState.ACTIVE,
+            WorkoutState.FINISHED,
+        ):
+            adapter.emit(
+                Pm5StatusEvent(
+                    Pm5Status(0, 0, 0, 0, 0, 0, 0, 0, 0, state, RowingState.INACTIVE)
+                )
+            )
+            await anext(handler)
 
-        # Should have published both the status AND a lifecycle event
         workout_msgs = harness.messages_for("concept2mqtt/pm5/workout/state")
-        assert len(workout_msgs) >= 1
-        lifecycle_payload = workout_msgs[-1][0]
-        assert '"event":"started"' in lifecycle_payload
-        assert workout_msgs[-1][2] == 1  # QoS 1
+        assert [message[0] for message in workout_msgs] == [
+            '{"event":"started"}',
+            '{"event":"paused"}',
+            '{"event":"resumed"}',
+            '{"event":"ended"}',
+        ]
+        assert [message[1] for message in workout_msgs] == [False, False, False, False]
+        assert [message[2] for message in workout_msgs] == [1, 1, 1, 1]
 
         with suppress(StopAsyncIteration):
             await handler.aclose()

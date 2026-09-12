@@ -13,6 +13,7 @@ Transition rules::
     (ACTIVE | PAUSED) -> FINISHED => ENDED
 
 All other state changes (e.g. ``FINISHED -> IDLE``) produce no event.
+``UNKNOWN`` is non-authoritative and does not replace the most recent known state.
 """
 
 from __future__ import annotations
@@ -78,6 +79,8 @@ class WorkoutLifecycle:
         Returns:
             The lifecycle transition, or ``None`` if no boundary was crossed.
         """
+        if new_state is WorkoutState.UNKNOWN:
+            return None
         if new_state == self._state:
             return None
         transition = _TRANSITION_TABLE.get((self._state, new_state))

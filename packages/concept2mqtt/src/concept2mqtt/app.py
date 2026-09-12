@@ -32,6 +32,7 @@ from concept2mqtt.pm5.types import (
     Pm5StrokeEvent,
     Pm5WorkoutSummaryEvent,
 )
+from concept2mqtt.pm5.workout import WorkoutLifecycle
 
 if TYPE_CHECKING:
     from concept2mqtt.pm5.types import Pm5Identity, Pm5Status, Pm5Stroke
@@ -92,9 +93,12 @@ def _register_pm5_device(app: App) -> None:
         2. Read and publish identity (retained, QoS 1).
         3. Mark the device as available.
         4. Stream events, publishing each to the appropriate sub-entity.
+           Workout lifecycle transitions (started/paused/resumed/ended)
+           are detected and published to the workout topic.
         5. On shutdown or connection loss, mark unavailable and disconnect.
         """
         pm5 = ctx.adapter(Pm5Port)
+        lifecycle = WorkoutLifecycle()
         await pm5.connect()
         try:
             ident = await pm5.identity()
@@ -109,6 +113,8 @@ def _register_pm5_device(app: App) -> None:
                 yield
                 async for event in pm5.events():
                     await _publish_event(ctx, event)
+                    if isinstance(event, Pm5StatusEvent):
+                        await _publish_lifecycle(ctx, lifecycle, event)
                     yield
         finally:
             await ctx.mark_unavailable()
@@ -129,6 +135,17 @@ async def _publish_identity(ctx: DeviceContext, ident: Pm5Identity) -> None:
             "erg_type": ident.erg_type,
         },
     )
+
+
+async def _publish_lifecycle(
+    ctx: DeviceContext,
+    lifecycle: WorkoutLifecycle,
+    event: Pm5StatusEvent,
+) -> None:
+    """Detect and publish workout lifecycle transitions."""
+    transition = lifecycle.update(event.status.workout_state)
+    if transition is not None:
+        await _publish_topic(ctx, "workout", {"event": transition.value})
 
 
 @asynccontextmanager

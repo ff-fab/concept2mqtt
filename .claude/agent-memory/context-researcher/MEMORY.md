@@ -8,8 +8,9 @@
 - [project_csafe_codec_architecture.md](project_csafe_codec_architecture.md) —
   csafe-codec Rust/PyO3 package module structure and test file locations (feature-
   complete, only publication to crates.io/PyPI remains, c2m-dn9.5)
-- [project_python_app_not_started.md](project_python_app_not_started.md) — the PM5 app
-  concept2mqtt MQTT-publishing app has no code yet (main.py is `# TODO`); tracked as
-  epics c2m-x3b/c2m-bm7/c2m-j2s, all unstarted
+- [project_python_app_not_started.md](project_python_app_not_started.md) — STALE TITLE,
+  content updated 2026-09-12: c2m-x3b closed, c2m-bm7 (BleakPm5Adapter) 100% closed,
+  only c2m-j2s (MVP telemetry pipeline, 0/4) remains; main.py not yet wired to real
+  adapter
 - [project_ble_test_vectors.md](project_ble_test_vectors.md) — STALE, PR #17 merged &
   beads prefix renamed to c2m-*; kept for history, see pointer inside

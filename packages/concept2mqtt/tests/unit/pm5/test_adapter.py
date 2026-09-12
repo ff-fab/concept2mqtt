@@ -42,6 +42,7 @@ from concept2mqtt.pm5.errors import Pm5ConnectionError, Pm5TimeoutError
 from concept2mqtt.pm5.port import Pm5Port
 from concept2mqtt.pm5.types import (
     Pm5Event,
+    Pm5ForceCurveEvent,
     Pm5Identity,
     Pm5SplitIntervalEvent,
     Pm5StatusEvent,
@@ -75,6 +76,13 @@ class FakeCharacteristic:
     @override
     def __str__(self) -> str:
         return self.uuid
+
+
+class FakeAdvertisement:
+    """Minimal stand-in for bleak.backends.scanner.AdvertisementData."""
+
+    def __init__(self, service_uuids: list[str]) -> None:
+        self.service_uuids = service_uuids
 
 
 def _make_mock_client(
@@ -148,6 +156,11 @@ async def _connect_adapter(
         await adapter.connect()
 
 
+async def _next_event(adapter: BleakPm5Adapter) -> Pm5Event:
+    """Await the next event from an adapter stream."""
+    return await anext(adapter.events())
+
+
 # =============================================================================
 # Protocol conformance
 # =============================================================================
@@ -179,7 +192,10 @@ class TestScanning:
     async def test_scan_finds_pm5_by_name(
         self, adapter: BleakPm5Adapter, mock_scanner: AsyncMock, mock_client: AsyncMock
     ) -> None:
-        """Scanner uses PM5 name prefix filter."""
+        """Scanner accepts only the expected PM5 advertisement.
+
+        Technique: Equivalence Partitioning -- name and service identity.
+        """
         with patch("concept2mqtt.pm5.adapter.BleakClient", return_value=mock_client):
             await adapter.connect()
 
@@ -188,8 +204,16 @@ class TestScanning:
         filter_fn = mock_scanner.call_args.args[0]
         pm5_device = FakeBleDevice(name="PM5 530426599 Row")
         non_pm5 = FakeBleDevice(name="HeartRate Monitor")
-        assert filter_fn(pm5_device, None) is True
-        assert filter_fn(non_pm5, None) is False
+        misleading_device = FakeBleDevice(name="NotPM5Sensor")
+        pm5_advertisement = FakeAdvertisement(["ce060000-43e5-11e4-916c-0800200c9a66"])
+        unrelated_advertisement = FakeAdvertisement(
+            ["0000180d-0000-1000-8000-00805f9b34fb"]
+        )
+        assert filter_fn(pm5_device, pm5_advertisement) is True
+        assert filter_fn(non_pm5, pm5_advertisement) is False
+        assert filter_fn(misleading_device, pm5_advertisement) is False
+        assert filter_fn(pm5_device, unrelated_advertisement) is False
+        assert "adapter" not in mock_scanner.call_args.kwargs
 
     async def test_scan_raises_when_no_device_found(
         self, adapter: BleakPm5Adapter
@@ -298,15 +322,15 @@ class TestConnectionLifecycle:
         ):
             await adapter.connect()
 
-    async def test_on_disconnect_callback_terminates_events(
+    async def test_on_disconnect_callback_starts_reconnect_without_sentinel(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
         mock_client: AsyncMock,
     ) -> None:
-        """BLE disconnection callback ends the event stream.
+        """BLE disconnection callback preserves the event stream for reconnect.
 
-        Technique: State Transition Testing -- unexpected disconnect.
+        Technique: State Transition Testing -- connected -> reconnecting.
         """
         await _connect_adapter(adapter, mock_scanner, mock_client)
 
@@ -314,9 +338,47 @@ class TestConnectionLifecycle:
         adapter._on_disconnect(mock_client)
 
         assert adapter._connected is False
-        # Event queue should have a None sentinel
-        sentinel = adapter._event_queue.get_nowait()
-        assert sentinel is None
+        assert adapter._event_queue.empty()
+        assert adapter._reconnect_task is not None
+        await adapter.disconnect()
+
+    async def test_connect_cleans_up_client_when_identity_read_fails(
+        self, adapter: BleakPm5Adapter, mock_scanner: AsyncMock
+    ) -> None:
+        """A failed post-connect setup releases the established BLE client.
+
+        Technique: Error Guessing -- a GATT read fails after BLE connects.
+        """
+        client = _make_mock_client()
+        client.read_gatt_char = AsyncMock(side_effect=OSError("GATT read failed"))
+
+        with (
+            patch("concept2mqtt.pm5.adapter.BleakClient", return_value=client),
+            pytest.raises(Pm5ConnectionError, match="Failed to read PM5 identity"),
+        ):
+            await adapter.connect()
+
+        client.disconnect.assert_awaited_once()
+        assert adapter._client is None
+
+    async def test_reconnect_uses_bounded_exponential_backoff(self) -> None:
+        """Reconnect retries double the delay only up to reconnect_max.
+
+        Technique: Boundary Value Analysis -- minimum and maximum retry delays.
+        """
+        adapter = BleakPm5Adapter(reconnect_min=0.1, reconnect_max=0.2)
+        adapter._running = True
+        establish = AsyncMock(side_effect=[Pm5ConnectionError("lost"), None])
+
+        with (
+            patch.object(adapter, "_establish_connection", establish),
+            patch(
+                "concept2mqtt.pm5.adapter.asyncio.sleep", new_callable=AsyncMock
+            ) as sleep,
+        ):
+            await adapter._reconnect()
+
+        assert [call.args[0] for call in sleep.await_args_list] == [0.1, 0.2]
 
 
 # =============================================================================
@@ -415,7 +477,7 @@ class TestWorkoutStateMapping:
         ("code", "expected"),
         [
             (0, WorkoutState.IDLE),
-            (1, WorkoutState.IDLE),
+            (1, WorkoutState.ACTIVE),
             (2, WorkoutState.STARTING),
             (5, WorkoutState.ACTIVE),
             (6, WorkoutState.ACTIVE),
@@ -439,8 +501,10 @@ class TestRowingStateMapping:
         ("code", "expected"),
         [
             (0, RowingState.INACTIVE),
-            (1, RowingState.DRIVE),
-            (2, RowingState.RECOVERY),
+            (1, RowingState.INACTIVE),
+            (2, RowingState.DRIVE),
+            (3, RowingState.RECOVERY),
+            (4, RowingState.RECOVERY),
             (99, RowingState.UNKNOWN),
         ],
     )
@@ -465,6 +529,8 @@ class TestMapGeneralStatus:
         payload[8] = 5
         # rowing_state = 1 (drive)
         payload[9] = 1
+        # stroke_state = 2 (drive)
+        payload[10] = 2
         # drag_factor = 120
         payload[18] = 120
         return csafe_codec.decode_general_status(bytes(payload))
@@ -531,6 +597,20 @@ class TestMapGeneralStatus:
         assert status.power == 180
         assert status.drag_factor == 120
 
+    def test_heart_rate_sentinel_is_normalized(self) -> None:
+        """The PM5 no-belt sentinel becomes the domain's zero value.
+
+        Technique: Equivalence Partitioning -- valid BPM versus invalid sentinel.
+        """
+        gs = self._make_gs()
+        payload = bytearray(17)
+        payload[6] = 255
+        as1 = csafe_codec.decode_additional_status_1(bytes(payload))
+
+        status = _map_general_status(gs, as1, None)
+
+        assert status.heart_rate == 0
+
 
 class TestMapStroke:
     """_map_stroke maps wire-format StrokeData to domain Pm5Stroke.
@@ -551,11 +631,11 @@ class TestMapStroke:
         payload[7] = 85
         # stroke_recovery_time_cs = 115 (1.15s after /100)
         payload[8:10] = (115).to_bytes(2, "little")
-        # stroke_distance = 98 (9.8m after /10)
+        # stroke_distance = 98 (0.98m after /100)
         payload[10:12] = (98).to_bytes(2, "little")
-        # peak_drive_force = 4500 (450.0N after /10)
+        # peak_drive_force = 4500 (450.0 lb converted to N)
         payload[12:14] = (4500).to_bytes(2, "little")
-        # average_drive_force = 3200 (320.0N after /10)
+        # average_drive_force = 3200 (320.0 lb converted to N)
         payload[14:16] = (3200).to_bytes(2, "little")
         # work_per_stroke = 2850 (285.0J after /10)
         payload[16:18] = (2850).to_bytes(2, "little")
@@ -570,7 +650,7 @@ class TestMapStroke:
         payload[0:3] = (10000).to_bytes(3, "little")
         # stroke_power = 190
         payload[3:5] = (190).to_bytes(2, "little")
-        # stroke_calories = 3500 (3.5 kcal after /1000)
+        # stroke_calories = 3500 cal/hr
         payload[5:7] = (3500).to_bytes(2, "little")
         # stroke_count = 10
         payload[7:9] = (10).to_bytes(2, "little")
@@ -585,9 +665,9 @@ class TestMapStroke:
         assert stroke.drive_time == pytest.approx(0.85)
         assert stroke.recovery_time == pytest.approx(1.15)
         assert stroke.drive_length == pytest.approx(1.35)
-        assert stroke.stroke_distance == pytest.approx(9.8)
-        assert stroke.peak_force == pytest.approx(450.0)
-        assert stroke.average_force == pytest.approx(320.0)
+        assert stroke.stroke_distance == pytest.approx(0.98)
+        assert stroke.peak_force == pytest.approx(2001.699726867225)
+        assert stroke.average_force == pytest.approx(1423.43091688336)
         assert stroke.work_per_stroke == pytest.approx(285.0)
         assert stroke.stroke_power == 0  # No ASD
         assert stroke.stroke_calories == 0.0
@@ -599,7 +679,7 @@ class TestMapStroke:
         stroke = _map_stroke(sd, asd)
 
         assert stroke.stroke_power == 190
-        assert stroke.stroke_calories == pytest.approx(3.5)
+        assert stroke.stroke_calories == pytest.approx(0.0019444444444444444)
 
 
 class TestMapWorkoutSummary:
@@ -678,6 +758,10 @@ class TestNotificationSubscription:
 
         # Should have called start_notify for each streaming UUID + PM TX
         assert mock_client.start_notify.await_count >= 10
+        subscribed_uuids = [
+            call.args[0] for call in mock_client.start_notify.call_args_list
+        ]
+        assert any("003d" in uuid for uuid in subscribed_uuids)
 
     async def test_subscribe_skips_unavailable_chars(
         self, adapter: BleakPm5Adapter, mock_scanner: AsyncMock
@@ -758,6 +842,103 @@ class TestEventStreaming:
         event = adapter._event_queue.get_nowait()
         assert isinstance(event, Pm5StrokeEvent)
         assert event.stroke.stroke_count == 5
+
+    async def test_force_curve_notifications_assemble_chunks_by_sequence(
+        self,
+        adapter: BleakPm5Adapter,
+        mock_scanner: AsyncMock,
+        mock_client: AsyncMock,
+    ) -> None:
+        """Out-of-order chunks emit one complete force curve in sequence order.
+
+        Technique: State Transition Testing -- incomplete -> complete curve.
+        """
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        sender = FakeCharacteristic("ce06003d-43e5-11e4-916c-0800200c9a66")
+
+        adapter._on_notification(sender, bytearray(b"\x22\x01\x1e\x00\x28\x00"))
+        assert adapter._event_queue.empty()
+        adapter._on_notification(sender, bytearray(b"\x22\x00\x0a\x00\x14\x00"))
+
+        event = adapter._event_queue.get_nowait()
+        assert isinstance(event, Pm5ForceCurveEvent)
+        assert event.force_curve.data_points == (10, 20, 30, 40)
+
+    async def test_event_queue_coalesces_to_latest_notification(
+        self,
+        adapter: BleakPm5Adapter,
+        mock_scanner: AsyncMock,
+        mock_client: AsyncMock,
+    ) -> None:
+        """High-rate notifications retain only the newest pending event.
+
+        Technique: Boundary Value Analysis -- queue capacity of one.
+        """
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        sender = FakeCharacteristic("ce060031-43e5-11e4-916c-0800200c9a66")
+        first = bytearray(19)
+        second = bytearray(19)
+        first[0:3] = (100).to_bytes(3, "little")
+        second[0:3] = (200).to_bytes(3, "little")
+
+        adapter._on_notification(sender, first)
+        adapter._on_notification(sender, second)
+
+        assert adapter._event_queue.qsize() == 1
+        event = adapter._event_queue.get_nowait()
+        assert isinstance(event, Pm5StatusEvent)
+        assert event.status.elapsed_time == pytest.approx(2.0)
+
+    async def test_events_continue_after_automatic_reconnect(
+        self, mock_scanner: AsyncMock
+    ) -> None:
+        """An event consumer survives a reconnect and receives fresh telemetry.
+
+        Technique: State Transition Testing -- connected -> lost -> reconnected.
+        """
+        adapter = BleakPm5Adapter(reconnect_min=0.0, reconnect_max=0.0)
+        first_client = _make_mock_client()
+        second_client = _make_mock_client()
+        with patch(
+            "concept2mqtt.pm5.adapter.BleakClient",
+            side_effect=[first_client, second_client],
+        ):
+            await adapter.connect()
+            next_event = asyncio.create_task(_next_event(adapter))
+            adapter._on_disconnect(first_client)
+            assert adapter._reconnect_task is not None
+            await adapter._reconnect_task
+
+        sender = FakeCharacteristic("ce060031-43e5-11e4-916c-0800200c9a66")
+        payload = bytearray(19)
+        payload[0:3] = (100).to_bytes(3, "little")
+        adapter._on_notification(sender, payload)
+
+        event = await next_event
+        assert isinstance(event, Pm5StatusEvent)
+        assert adapter._connected is True
+        await adapter.disconnect()
+
+    async def test_connect_discards_stale_disconnect_sentinel(
+        self,
+        adapter: BleakPm5Adapter,
+        mock_scanner: AsyncMock,
+        mock_client: AsyncMock,
+    ) -> None:
+        """A fresh connection cannot immediately end on an earlier stop signal.
+
+        Technique: State Transition Testing -- stopped -> connected event stream.
+        """
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        await adapter.disconnect()
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        next_event = asyncio.create_task(_next_event(adapter))
+        sender = FakeCharacteristic("ce060031-43e5-11e4-916c-0800200c9a66")
+
+        adapter._on_notification(sender, bytearray(19))
+
+        assert isinstance(await next_event, Pm5StatusEvent)
+        await adapter.disconnect()
 
     async def test_unknown_uuid_is_ignored(
         self,
@@ -869,13 +1050,13 @@ class TestCsafeRequestResponse:
     Technique: Specification-based Testing, Boundary Value Analysis.
     """
 
-    async def test_send_csafe_writes_and_reads(
+    async def test_csafe_transport_writes_and_reads(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
         mock_client: AsyncMock,
     ) -> None:
-        """send_csafe writes to PM RX and reads response from PM TX."""
+        """The CSAFE transport writes to PM RX and reads from PM TX."""
         await _connect_adapter(adapter, mock_scanner, mock_client)
 
         # Simulate response arriving shortly after write
@@ -886,18 +1067,18 @@ class TestCsafeRequestResponse:
 
         mock_client.write_gatt_char = AsyncMock(side_effect=respond_after_write)
 
-        response = await adapter.send_csafe(b"\xf1\x80\xf2")
+        response = await adapter._send_csafe(b"\xf1\x80\xf2")
 
         assert response == b"\xf1\x01\x00\xf2"
 
-    async def test_send_csafe_raises_when_not_connected(
+    async def test_csafe_transport_raises_when_not_connected(
         self, adapter: BleakPm5Adapter
     ) -> None:
-        """send_csafe before connect() raises Pm5ConnectionError."""
+        """The CSAFE transport before connect() raises Pm5ConnectionError."""
         with pytest.raises(Pm5ConnectionError, match="not connected"):
-            await adapter.send_csafe(b"\xf1\x80\xf2")
+            await adapter._send_csafe(b"\xf1\x80\xf2")
 
-    async def test_send_csafe_timeout(
+    async def test_csafe_transport_times_out(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
@@ -916,11 +1097,11 @@ class TestCsafeRequestResponse:
         adapter_mod.DEFAULT_CSAFE_TIMEOUT = 0.05
         try:
             with pytest.raises(Pm5TimeoutError, match="CSAFE response timeout"):
-                await adapter.send_csafe(b"\xf1\x80\xf2")
+                await adapter._send_csafe(b"\xf1\x80\xf2")
         finally:
             adapter_mod.DEFAULT_CSAFE_TIMEOUT = original
 
-    async def test_send_csafe_write_failure(
+    async def test_csafe_transport_wraps_write_failure(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
@@ -934,7 +1115,74 @@ class TestCsafeRequestResponse:
         mock_client.write_gatt_char = AsyncMock(side_effect=OSError("write rejected"))
 
         with pytest.raises(Pm5ConnectionError, match="CSAFE write failed"):
-            await adapter.send_csafe(b"\xf1\x80\xf2")
+            await adapter._send_csafe(b"\xf1\x80\xf2")
+
+    async def test_csafe_transport_splits_writes_at_twenty_bytes(
+        self,
+        adapter: BleakPm5Adapter,
+        mock_scanner: AsyncMock,
+        mock_client: AsyncMock,
+    ) -> None:
+        """Frames larger than one ATT payload are written in 20-byte chunks.
+
+        Technique: Boundary Value Analysis -- 20-byte BLE payload limit.
+        """
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        command = bytes(range(21))
+
+        async def respond_after_last_chunk(
+            _uuid: str, data: bytes, **_kwargs: Any
+        ) -> None:
+            if data == command[20:]:
+                adapter._csafe_response_data = b"response"
+                adapter._csafe_response.set()
+
+        mock_client.write_gatt_char = AsyncMock(side_effect=respond_after_last_chunk)
+
+        response = await adapter._send_csafe(command)
+
+        assert response == b"response"
+        writes = [call.args[1] for call in mock_client.write_gatt_char.call_args_list]
+        assert writes == [
+            command[:20],
+            command[20:],
+        ]
+
+    async def test_csafe_transport_serializes_concurrent_requests(
+        self,
+        adapter: BleakPm5Adapter,
+        mock_scanner: AsyncMock,
+        mock_client: AsyncMock,
+    ) -> None:
+        """A second request cannot overwrite the first request's response state.
+
+        Technique: Condition Coverage -- concurrent callers share one transport.
+        """
+        await _connect_adapter(adapter, mock_scanner, mock_client)
+        first_write_started = asyncio.Event()
+        release_first_write = asyncio.Event()
+        write_count = 0
+
+        async def respond_in_order(*_args: Any, **_kwargs: Any) -> None:
+            nonlocal write_count
+            write_count += 1
+            if write_count == 1:
+                first_write_started.set()
+                await release_first_write.wait()
+            adapter._csafe_response_data = bytes([write_count])
+            adapter._csafe_response.set()
+
+        mock_client.write_gatt_char = AsyncMock(side_effect=respond_in_order)
+        first = asyncio.create_task(adapter._send_csafe(b"first"))
+        await first_write_started.wait()
+        second = asyncio.create_task(adapter._send_csafe(b"second"))
+        await asyncio.sleep(0)
+        assert mock_client.write_gatt_char.await_count == 1
+
+        release_first_write.set()
+
+        assert await first == b"\x01"
+        assert await second == b"\x02"
 
 
 # =============================================================================
@@ -993,13 +1241,13 @@ class TestNotificationRate:
         with pytest.raises(Pm5ConnectionError, match="not connected"):
             await adapter.set_notification_rate(2)
 
-    async def test_set_notification_rate_read_back_failure_returns_requested(
+    async def test_set_notification_rate_read_back_failure_returns_written_byte(
         self,
         adapter: BleakPm5Adapter,
         mock_scanner: AsyncMock,
         mock_client: AsyncMock,
     ) -> None:
-        """If read-back fails, returns the requested rate.
+        """If read-back fails, returns the masked byte that was written.
 
         Technique: Error Guessing -- read-back failure.
         """
@@ -1019,5 +1267,5 @@ class TestNotificationRate:
 
         mock_client.read_gatt_char = AsyncMock(side_effect=fail_on_readback)
 
-        result = await adapter.set_notification_rate(2)
-        assert result == 2
+        result = await adapter.set_notification_rate(256)
+        assert result == 0

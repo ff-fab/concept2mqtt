@@ -66,6 +66,10 @@ DEFAULT_RECONNECT_MAX: float = 60.0
 DEFAULT_CSAFE_TIMEOUT: float = 5.0
 CSAFE_INTER_FRAME_GAP: float = 0.05
 """50 ms gap between CSAFE frames per Concept2 spec."""
+MAX_CSAFE_WRITE_SIZE: int = 20
+"""Maximum PM5 BLE write size for the CSAFE receive characteristic."""
+EVENT_QUEUE_SIZE: int = 1
+"""One latest-value event, preventing unbounded notification backlog."""
 
 # GATT characteristic UUID suffixes (expanded via pm5_uuid)
 _CHAR_MODEL: str = pm5_uuid(0x0011)
@@ -77,6 +81,7 @@ _CHAR_ERG_TYPE: str = pm5_uuid(0x0016)
 _CHAR_PM_RX: str = pm5_uuid(0x0021)
 _CHAR_PM_TX: str = pm5_uuid(0x0022)
 _CHAR_SAMPLE_RATE: str = pm5_uuid(0x0034)
+_PM5_ADVERTISED_SERVICE: str = pm5_uuid(0x0000)
 
 # Notification characteristic UUIDs mapped to their csafe_codec decoders.
 _NotifyDecoder = Callable[[bytes], Any]
@@ -106,6 +111,7 @@ _NOTIFY_DECODERS: dict[str, tuple[str, _NotifyDecoder]] = {
         "end_of_workout_additional_summary",
         csafe_codec.decode_end_of_workout_additional_summary,
     ),
+    pm5_uuid(0x003D): ("force_curve_data", csafe_codec.decode_force_curve_data),
     pm5_uuid(0x003E): ("additional_status_3", csafe_codec.decode_additional_status_3),
 }
 
@@ -132,7 +138,7 @@ def _workout_state(code: int) -> WorkoutState:
     """Map csafe_codec workout_state int to the domain enum."""
     mapping = {
         0: WorkoutState.IDLE,
-        1: WorkoutState.IDLE,
+        1: WorkoutState.ACTIVE,
         2: WorkoutState.STARTING,
         3: WorkoutState.STARTING,
         4: WorkoutState.STARTING,
@@ -150,11 +156,13 @@ def _workout_state(code: int) -> WorkoutState:
 
 
 def _rowing_state(code: int) -> RowingState:
-    """Map csafe_codec rowing_state int to the domain enum."""
+    """Map csafe_codec stroke_state int to the domain phase enum."""
     mapping = {
         0: RowingState.INACTIVE,
-        1: RowingState.DRIVE,
-        2: RowingState.RECOVERY,
+        1: RowingState.INACTIVE,
+        2: RowingState.DRIVE,
+        3: RowingState.RECOVERY,
+        4: RowingState.RECOVERY,
     }
     return mapping.get(code, RowingState.UNKNOWN)
 
@@ -171,12 +179,12 @@ def _map_general_status(
         pace=as1.current_pace_cs / 100.0 if as1 else 0.0,
         speed=as1.speed_mms / 1000.0 if as1 else 0.0,
         stroke_rate=as1.stroke_rate if as1 else 0,
-        heart_rate=as1.heartrate if as1 else 0,
+        heart_rate=as1.heartrate if as1 and as1.heartrate != 255 else 0,
         calories=as2.total_calories if as2 else 0,
         power=as2.average_power if as2 else 0,
         drag_factor=gs.drag_factor,
         workout_state=_workout_state(gs.workout_state),
-        rowing_state=_rowing_state(gs.rowing_state),
+        rowing_state=_rowing_state(gs.stroke_state),
     )
 
 
@@ -190,12 +198,18 @@ def _map_stroke(
         drive_time=sd.drive_time / 100.0,
         recovery_time=sd.stroke_recovery_time_cs / 100.0,
         drive_length=sd.drive_length / 100.0,
-        stroke_distance=sd.stroke_distance / 10.0,
-        peak_force=sd.peak_drive_force / 10.0,
-        average_force=sd.average_drive_force / 10.0,
+        stroke_distance=sd.stroke_distance / 100.0,
+        peak_force=sd.peak_drive_force * 0.1 * 4.4482216152605,
+        average_force=sd.average_drive_force * 0.1 * 4.4482216152605,
         work_per_stroke=sd.work_per_stroke / 10.0,
         stroke_power=asd.stroke_power if asd else 0,
-        stroke_calories=asd.stroke_calories / 1000.0 if asd else 0.0,
+        stroke_calories=(
+            asd.stroke_calories
+            * (sd.drive_time + sd.stroke_recovery_time_cs)
+            / 360_000_000.0
+            if asd
+            else 0.0
+        ),
     )
 
 
@@ -248,9 +262,16 @@ class BleakPm5Adapter:
     _client: BleakClient | None = field(default=None, init=False, repr=False)
     _identity: Pm5Identity | None = field(default=None, init=False, repr=False)
     _event_queue: asyncio.Queue[Pm5Event | None] = field(
-        default_factory=asyncio.Queue, init=False, repr=False
+        default_factory=lambda: asyncio.Queue(maxsize=EVENT_QUEUE_SIZE),
+        init=False,
+        repr=False,
     )
     _connected: bool = field(default=False, init=False, repr=False)
+    _running: bool = field(default=False, init=False, repr=False)
+    _disconnecting: bool = field(default=False, init=False, repr=False)
+    _reconnect_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False
+    )
     _subscribed_uuids: list[str] = field(default_factory=list, init=False, repr=False)
 
     # Cached latest decoded wire-format objects for status fusion.
@@ -269,6 +290,10 @@ class BleakPm5Adapter:
     _latest_asd: csafe_codec.AdditionalStrokeData | None = field(
         default=None, init=False, repr=False
     )
+    _force_curve_total: int | None = field(default=None, init=False, repr=False)
+    _force_curve_chunks: dict[int, tuple[int, ...]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     # CSAFE response tracking.
     _csafe_response: asyncio.Event = field(
@@ -276,6 +301,9 @@ class BleakPm5Adapter:
     )
     _csafe_response_data: bytes = field(default=b"", init=False, repr=False)
     _last_csafe_send: float = field(default=0.0, init=False, repr=False)
+    _csafe_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, init=False, repr=False
+    )
 
     # -----------------------------------------------------------------------
     # Pm5Port interface
@@ -287,28 +315,32 @@ class BleakPm5Adapter:
         Raises:
             Pm5ConnectionError: If no PM5 is found or the connection fails.
         """
-        device = await self._scan()
-        await self._connect_device(device)
-        self._identity = await self._read_identity()
-        await self._subscribe_notifications()
-        self._connected = True
+        self._running = True
+        self._disconnecting = False
+        self._clear_event_queue()
+        try:
+            await self._establish_connection()
+        except Exception:
+            self._running = False
+            await self._cleanup_connection()
+            raise
+        identity = self._identity
+        if identity is None:
+            raise Pm5ConnectionError("PM5 identity unavailable after connection")
         log.info(
             "Connected to PM5: serial=%s fw=%s",
-            self._identity.serial_number,
-            self._identity.firmware_revision,
+            identity.serial_number,
+            identity.firmware_revision,
         )
 
     async def disconnect(self) -> None:
         """Gracefully release the PM5 connection."""
+        self._running = False
+        self._disconnecting = True
         self._connected = False
-        self._event_queue.put_nowait(None)
-        await self._unsubscribe_notifications()
-        if self._client and self._client.is_connected:
-            try:
-                await self._client.disconnect()
-            except Exception:
-                log.warning("Error during PM5 disconnect", exc_info=True)
-        self._client = None
+        await self._cancel_reconnect()
+        self._enqueue_event(None)
+        await self._cleanup_connection()
         log.info("Disconnected from PM5")
 
     async def identity(self) -> Pm5Identity:
@@ -324,9 +356,10 @@ class BleakPm5Adapter:
     async def events(self) -> AsyncIterator[Pm5Event]:
         """Yield domain events decoded from PM5 BLE notifications.
 
-        The iterator ends when the connection is closed or lost.
+        The iterator ends when :meth:`disconnect` is called. Transient BLE
+        disconnects reconnect in the background without ending the stream.
         """
-        while self._connected:
+        while True:
             event = await self._event_queue.get()
             if event is None:
                 return
@@ -336,7 +369,7 @@ class BleakPm5Adapter:
     # CSAFE command/response (c2m-bm7.4)
     # -----------------------------------------------------------------------
 
-    async def send_csafe(self, command_bytes: bytes) -> bytes:
+    async def _send_csafe(self, command_bytes: bytes) -> bytes:
         """Send a CSAFE command frame and wait for the response.
 
         Enforces the 50 ms inter-frame gap required by the PM5.
@@ -352,35 +385,38 @@ class BleakPm5Adapter:
             Pm5ConnectionError: If not connected.
             Pm5TimeoutError: If the PM5 does not respond within the timeout.
         """
-        if not self._connected or self._client is None:
-            raise Pm5ConnectionError("not connected")
+        async with self._csafe_lock:
+            if not self._connected or self._client is None:
+                raise Pm5ConnectionError("not connected")
 
-        # Enforce inter-frame gap.
-        now = asyncio.get_event_loop().time()
-        elapsed = now - self._last_csafe_send
-        if elapsed < CSAFE_INTER_FRAME_GAP:
-            await asyncio.sleep(CSAFE_INTER_FRAME_GAP - elapsed)
+            now = asyncio.get_running_loop().time()
+            elapsed = now - self._last_csafe_send
+            if elapsed < CSAFE_INTER_FRAME_GAP:
+                await asyncio.sleep(CSAFE_INTER_FRAME_GAP - elapsed)
 
-        self._csafe_response.clear()
-        self._csafe_response_data = b""
+            self._csafe_response.clear()
+            self._csafe_response_data = b""
 
-        try:
-            await self._client.write_gatt_char(
-                _CHAR_PM_RX, command_bytes, response=True
-            )
-        except Exception as exc:
-            raise Pm5ConnectionError(f"CSAFE write failed: {exc}") from exc
+            try:
+                for offset in range(0, len(command_bytes), MAX_CSAFE_WRITE_SIZE):
+                    await self._client.write_gatt_char(
+                        _CHAR_PM_RX,
+                        command_bytes[offset : offset + MAX_CSAFE_WRITE_SIZE],
+                        response=True,
+                    )
+            except Exception as exc:
+                raise Pm5ConnectionError(f"CSAFE write failed: {exc}") from exc
 
-        self._last_csafe_send = asyncio.get_event_loop().time()
+            self._last_csafe_send = asyncio.get_running_loop().time()
 
-        try:
-            await asyncio.wait_for(
-                self._csafe_response.wait(), timeout=DEFAULT_CSAFE_TIMEOUT
-            )
-        except TimeoutError as exc:
-            raise Pm5TimeoutError("CSAFE response timeout") from exc
+            try:
+                await asyncio.wait_for(
+                    self._csafe_response.wait(), timeout=DEFAULT_CSAFE_TIMEOUT
+                )
+            except TimeoutError as exc:
+                raise Pm5TimeoutError("CSAFE response timeout") from exc
 
-        return self._csafe_response_data
+            return self._csafe_response_data
 
     # -----------------------------------------------------------------------
     # Notification rate (c2m-bm7.5)
@@ -417,10 +453,10 @@ class BleakPm5Adapter:
         # Read back to verify the rate took effect.
         try:
             data = await self._client.read_gatt_char(_CHAR_SAMPLE_RATE)
-            return data[0] if data else rate_byte
+            return data[0] if data else payload[0]
         except Exception:
             log.warning("Could not read back notification rate", exc_info=True)
-            return rate_byte
+            return payload[0]
 
     # -----------------------------------------------------------------------
     # Internal: scanning and connection
@@ -435,18 +471,30 @@ class BleakPm5Adapter:
         Raises:
             Pm5ConnectionError: If no PM5 is found within the scan timeout.
         """
-        if self.address is not None:
-            device = await BleakScanner.find_device_by_address(
-                self.address,
-                timeout=self.scan_timeout,
-                adapter=self.adapter or "hci0",
-            )
-        else:
-            device = await BleakScanner.find_device_by_filter(
-                lambda d, _adv: bool(d.name and PM5_NAME_PREFIX in d.name),
-                timeout=self.scan_timeout,
-                adapter=self.adapter or "hci0",
-            )
+        scanner_options: dict[str, Any] = {"timeout": self.scan_timeout}
+        if self.adapter is not None:
+            scanner_options["adapter"] = self.adapter
+        try:
+            if self.address is not None:
+                device = await BleakScanner.find_device_by_address(
+                    self.address,
+                    **scanner_options,
+                )
+            else:
+                device = await BleakScanner.find_device_by_filter(
+                    lambda device, advertisement: bool(
+                        device.name
+                        and device.name.startswith(PM5_NAME_PREFIX)
+                        and _PM5_ADVERTISED_SERVICE
+                        in {
+                            service_uuid.lower()
+                            for service_uuid in advertisement.service_uuids
+                        }
+                    ),
+                    **scanner_options,
+                )
+        except Exception as exc:
+            raise Pm5ConnectionError(f"PM5 scan failed: {exc}") from exc
 
         if device is None:
             raise Pm5ConnectionError(f"No PM5 found within {self.scan_timeout}s scan")
@@ -465,11 +513,74 @@ class BleakPm5Adapter:
             self._client = None
             raise Pm5ConnectionError(f"BLE connect failed: {exc}") from exc
 
-    def _on_disconnect(self, _client: BleakClient) -> None:
+    async def _establish_connection(self) -> None:
+        """Create one fully initialized PM5 connection."""
+        self._connected = False
+        self._clear_event_queue()
+        self._clear_session_cache()
+        device = await self._scan()
+        await self._connect_device(device)
+        client = self._client
+        try:
+            self._identity = await self._read_identity()
+            await self._subscribe_notifications()
+            if client is not self._client or not client or not client.is_connected:
+                raise Pm5ConnectionError("BLE disconnected during connection setup")
+            self._connected = True
+        except Exception:
+            await self._cleanup_connection()
+            raise
+
+    async def _reconnect(self) -> None:
+        """Retry a lost connection with bounded exponential backoff."""
+        delay = self.reconnect_min
+        while self._running:
+            await asyncio.sleep(delay)
+            if not self._running:
+                return
+            try:
+                await self._establish_connection()
+            except Exception:
+                log.warning("PM5 reconnect failed; retrying", exc_info=True)
+                delay = min(max(delay * 2, self.reconnect_min), self.reconnect_max)
+            else:
+                log.info("Reconnected to PM5")
+                return
+
+    async def _cancel_reconnect(self) -> None:
+        """Cancel an active background reconnect task."""
+        task = self._reconnect_task
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        self._reconnect_task = None
+
+    async def _cleanup_connection(self) -> None:
+        """Release notifications and the current BLE client after setup or stop."""
+        await self._unsubscribe_notifications()
+        client = self._client
+        self._client = None
+        if client and client.is_connected:
+            try:
+                await client.disconnect()
+            except Exception:
+                log.warning("Error during PM5 disconnect", exc_info=True)
+        self._subscribed_uuids.clear()
+
+    def _on_disconnect(self, client: BleakClient) -> None:
         """Handle unexpected BLE disconnection."""
+        if client is not self._client:
+            return
         log.warning("PM5 BLE connection lost")
         self._connected = False
-        self._event_queue.put_nowait(None)
+        self._client = None
+        self._subscribed_uuids.clear()
+        if self._running and not self._disconnecting:
+            self._reconnect_task = asyncio.get_running_loop().create_task(
+                self._reconnect()
+            )
 
     # -----------------------------------------------------------------------
     # Internal: identity
@@ -520,6 +631,27 @@ class BleakPm5Adapter:
     # -----------------------------------------------------------------------
     # Internal: notifications
     # -----------------------------------------------------------------------
+
+    def _clear_session_cache(self) -> None:
+        """Discard decoded values that belonged to a previous BLE session."""
+        self._latest_gs = None
+        self._latest_as1 = None
+        self._latest_as2 = None
+        self._latest_sd = None
+        self._latest_asd = None
+        self._force_curve_total = None
+        self._force_curve_chunks.clear()
+
+    def _clear_event_queue(self) -> None:
+        """Remove stale values and explicit-stop sentinels before connecting."""
+        while not self._event_queue.empty():
+            self._event_queue.get_nowait()
+
+    def _enqueue_event(self, event: Pm5Event | None) -> None:
+        """Keep only the latest event when notifications outpace consumers."""
+        if self._event_queue.full():
+            self._event_queue.get_nowait()
+        self._event_queue.put_nowait(event)
 
     async def _subscribe_notifications(self) -> None:
         """Subscribe to all streaming characteristics on the PM5."""
@@ -585,7 +717,7 @@ class BleakPm5Adapter:
 
         event = self._to_domain_event(name, decoded)
         if event is not None:
-            self._event_queue.put_nowait(event)
+            self._enqueue_event(event)
 
     def _on_csafe_response(self, _sender: Any, data: bytearray) -> None:
         """Handle a CSAFE response notification on the PM Transmit char."""
@@ -628,10 +760,21 @@ class BleakPm5Adapter:
     def _handle_split_interval(self, decoded: Any) -> Pm5Event:  # noqa: ARG001
         return Pm5SplitIntervalEvent(split=_map_split_interval(decoded))
 
-    def _handle_force_curve(self, decoded: Any) -> Pm5Event:  # noqa: ARG001
-        return Pm5ForceCurveEvent(
-            force_curve=Pm5ForceCurve(data_points=decoded.data_points)
+    def _handle_force_curve(self, decoded: Any) -> Pm5Event | None:
+        if self._force_curve_total != decoded.total_notifications:
+            self._force_curve_total = decoded.total_notifications
+            self._force_curve_chunks.clear()
+        self._force_curve_chunks[decoded.sequence_number] = tuple(decoded.data_points)
+        if len(self._force_curve_chunks) < decoded.total_notifications:
+            return None
+        data_points = tuple(
+            point
+            for sequence_number in sorted(self._force_curve_chunks)
+            for point in self._force_curve_chunks[sequence_number]
         )
+        self._force_curve_total = None
+        self._force_curve_chunks.clear()
+        return Pm5ForceCurveEvent(force_curve=Pm5ForceCurve(data_points=data_points))
 
     def _fused_status_event(self) -> Pm5StatusEvent:
         """Build a Pm5StatusEvent from the latest cached wire-format data."""
